@@ -47,7 +47,9 @@ import java.util.TimeZone;
  *   CLASSPATH=/data/local/tmp/ryuo/panel.dex app_process /data/local/tmp/ryuo RyuoPanel
  *
  * 电脑经 adb forward 连到抽象套接字 ryuo-panel，一行一条 JSON：
- *   {"t":"state","theme":{...},"data":{...}}   换主题或换数据
+ *   {"t":"state","theme":{...},"data":{...},"mode":{...}}   换主题、数据或显示方式
+ *     mode 不给就是分屏窄条；{"full":true,"show":15,"hide":45} 是整屏：视频放 45 秒，
+ *     面板淡入盖在视频上 15 秒（视频在底下压暗继续播），如此循环
  *   {"t":"ping"}                               保活；20 秒收不到任何消息就自己藏起来
  *   {"t":"hide"} / {"t":"quit"}
  * 倒计时、时间进度、过期提示都在屏上按秒自己走，电脑只需隔一会儿送一次新数据。
@@ -55,7 +57,7 @@ import java.util.TimeZone;
 public final class RyuoPanel {
     static final String DIR = "/data/local/tmp/ryuo";
     static final String SOCKET = "ryuo-panel";
-    static final int W = 634, H = 1080, X = 1606;
+    static final int W = 634, H = 1080, X = 1606, FULL_W = 2240;
     static final long SILENT_HIDE_MS = 20_000, STALE_AFTER_MS = 30 * 60_000, ANIM_MS = 900;
 
     static volatile Theme theme;
@@ -63,6 +65,9 @@ public final class RyuoPanel {
     static volatile long lastMsg;
     static volatile boolean hideReq, quitReq;
     static volatile long dataVersion;
+    static volatile boolean full;
+    static volatile long showMs = 15_000, hideMs = 45_000;
+    static final long FADE_MS = 700;
 
     public static void main(String[] args) throws Exception {
         Looper.prepareMainLooper();
@@ -116,6 +121,12 @@ public final class RyuoPanel {
                     data = Data.parse(m.getJSONObject("data"));
                     dataVersion++;
                 }
+                if (m.has("mode")) {
+                    JSONObject md = m.getJSONObject("mode");
+                    full = md.optBoolean("full", false);
+                    showMs = md.optLong("show", 15) * 1000;
+                    hideMs = md.optLong("hide", 45) * 1000;
+                }
                 hideReq = false;
                 break;
             case "hide":
@@ -134,43 +145,80 @@ public final class RyuoPanel {
     Map<String, Float> from = new HashMap<>();
     long animStart, seenVersion = -1;
 
-    void loop() throws Exception {
-        SurfaceControl sc = new SurfaceControl.Builder().setName("ryuo-panel").setBufferSize(W, H)
-                .setFormat(PixelFormat.TRANSLUCENT).build();
-        SurfaceControl.Transaction t = new SurfaceControl.Transaction();
-        SurfaceControl.Transaction.class.getMethod("setLayerStack", SurfaceControl.class, int.class).invoke(t, sc, 0);
-        t.setLayer(sc, Integer.MAX_VALUE).setPosition(sc, X, 0).setVisibility(sc, false).apply();
-        Surface surface = new Surface(sc);
-        boolean visible = false;
-        System.out.println("就绪，等电脑送数据");
+    SurfaceControl sc;
+    Surface surface;
+    boolean layerFull, visible;
+    float alpha = -1;
+    final SurfaceControl.Transaction t = new SurfaceControl.Transaction();
 
+    /** 分屏只盖右边窄条，整屏盖满；切换时换一个尺寸合适的新图层。 */
+    void layer(boolean wantFull) throws Exception {
+        if (sc != null && layerFull == wantFull) return;
+        if (sc != null) {
+            t.reparent(sc, null).apply();
+            surface.release();
+            sc.release();
+        }
+        sc = new SurfaceControl.Builder().setName("ryuo-panel").setBufferSize(wantFull ? FULL_W : W, H)
+                .setFormat(PixelFormat.TRANSLUCENT).build();
+        SurfaceControl.Transaction.class.getMethod("setLayerStack", SurfaceControl.class, int.class).invoke(t, sc, 0);
+        t.setLayer(sc, Integer.MAX_VALUE).setPosition(sc, wantFull ? 0 : X, 0).setVisibility(sc, false).apply();
+        surface = new Surface(sc);
+        layerFull = wantFull;
+        visible = false;
+        alpha = -1;
+    }
+
+    /** 整屏循环里此刻面板该有多不透明：淡入、停留、淡出、藏起。 */
+    static float cycleAlpha(long now) {
+        long period = showMs + hideMs, ph = now % period;
+        if (ph >= showMs) return 0;
+        return Math.max(0, Math.min(1, Math.min(ph, showMs - ph) / (float) FADE_MS));
+    }
+
+    void loop() throws Exception {
+        System.out.println("就绪，等电脑送数据");
         while (!quitReq) {
             long now = System.currentTimeMillis();
             Theme th = theme;
             Data d = data;
-            boolean want = th != null && d != null && !hideReq && now - lastMsg < SILENT_HIDE_MS;
+            boolean isFull = full;
+            layer(isFull);
+            float a = isFull ? cycleAlpha(now) : 1;
+            boolean want = th != null && d != null && !hideReq && now - lastMsg < SILENT_HIDE_MS && a > 0;
             if (want != visible) {
                 t.setVisibility(sc, want).apply();
                 visible = want;
-                if (want) seenVersion = -1; // 重新出现时从零转一圈，看得出是活的
+                if (want) seenVersion = -1; // 每次出现都从零转上来，看得出是活的
                 System.out.println(want ? "显示" : "隐藏");
             }
             boolean animating = false;
             if (want) {
-                animating = step(d, now);
+                if (a != alpha) {
+                    t.setAlpha(sc, a).apply();
+                    alpha = a;
+                }
+                animating = step(d, now) || a < 1;
                 Canvas c = surface.lockHardwareCanvas();
                 try {
-                    new Painter(c, th, d, shown, now).draw();
+                    new Painter(c, th, d, shown, now, isFull).draw();
                 } finally {
                     surface.unlockCanvasAndPost(c);
                 }
             }
             long sleep = animating ? 16 : 1000 - System.currentTimeMillis() % 1000;
+            if (isFull && !animating) { // 别睡过下一次淡入
+                long period = showMs + hideMs, ph = now % period;
+                long untilShow = ph >= showMs ? period - ph : showMs - FADE_MS - ph;
+                if (untilShow > 0) sleep = Math.min(sleep, untilShow);
+            }
             Thread.sleep(Math.max(5, sleep));
         }
-        t.reparent(sc, null).apply();
-        surface.release();
-        sc.release();
+        if (sc != null) {
+            t.reparent(sc, null).apply();
+            surface.release();
+            sc.release();
+        }
         System.out.println("退出");
     }
 
@@ -197,6 +245,10 @@ public final class RyuoPanel {
         int ink, dim, faint, line, accent, accent2, hot, mark, warn, logoInk;
         Typeface head, num, name, text, mono;
         Bitmap strip;
+        float scrim;
+        String title, next;
+        boolean wideTitle;
+        int[] series;
         final Map<String, Bitmap> logos = new HashMap<>();
         final Map<String, Boolean> logoMono = new HashMap<>();
         static final Map<String, Typeface> FONT_CACHE = new HashMap<>();
@@ -224,6 +276,15 @@ public final class RyuoPanel {
             th.mono = font(f.optJSONObject("mono"));
             File strip = new File(DIR, j.getString("strip"));
             th.strip = strip.exists() ? BitmapFactory.decodeFile(strip.getPath()) : null;
+            th.scrim = (float) j.optDouble("scrim", .74);
+            JSONObject lb = j.optJSONObject("labels");
+            boolean tubes = "tubes".equals(th.layout);
+            th.title = lb != null ? lb.getString("title") : tubes ? "额度" : "AI 额度";
+            th.next = lb != null ? lb.getString("next") : tubes ? "下 一 更" : "接下来";
+            th.wideTitle = tubes && lb == null; // 墨夜流金的「额 度」是故意拉开的
+            JSONArray se = j.optJSONArray("series");
+            th.series = new int[4];
+            for (int i = 0; i < 4; i++) th.series[i] = se != null && se.length() > 0 ? Color.parseColor(se.getString(i % se.length())) : th.accent;
             JSONObject lg = j.optJSONObject("logos");
             if (lg != null) {
                 for (java.util.Iterator<String> it = lg.keys(); it.hasNext(); ) {
@@ -313,7 +374,10 @@ public final class RyuoPanel {
         final List<Row> soon;
         final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        Painter(Canvas c, Theme th, Data d, Map<String, Float> shown, long now) {
+        final boolean full;
+
+        Painter(Canvas c, Theme th, Data d, Map<String, Float> shown, long now, boolean full) {
+            this.full = full;
             this.c = c;
             this.th = th;
             this.d = d;
@@ -326,6 +390,10 @@ public final class RyuoPanel {
 
         void draw() {
             c.drawColor(0, PorterDuff.Mode.CLEAR);
+            if (full) {
+                drawFull();
+                return;
+            }
             if (th.strip != null) {
                 c.drawBitmap(th.strip, null, new Rect(0, 0, W, H), new Paint(Paint.FILTER_BITMAP_FLAG));
             } else {
@@ -333,15 +401,149 @@ public final class RyuoPanel {
             }
             if (d.rows.isEmpty()) return;
             // 防烧屏：内容每 10 分钟挪一个位置，在 ±3 像素里绕圈
-            int phase = (int) (now / 600_000 % 8);
+            int[] dd = drift();
             c.save();
-            c.translate(new int[]{0, 2, 3, 2, 0, -2, -3, -2}[phase], new int[]{-3, -2, 0, 2, 3, 2, 0, -2}[phase]);
+            c.translate(dd[0], dd[1]);
             switch (th.layout) {
                 case "tubes": tubes(); break;
                 case "cards": cards(); break;
+                case "orbits": orbits(); break;
                 default: rings();
             }
             c.restore();
+        }
+
+        int[] drift() {
+            int phase = (int) (now / 600_000 % 8);
+            return new int[]{new int[]{0, 2, 3, 2, 0, -2, -3, -2}[phase], new int[]{-3, -2, 0, 2, 3, 2, 0, -2}[phase]};
+        }
+
+        /** 整屏：左边 1606 压暗底下的视频，画四家大仪表；右边 634 放窄条背景和「接下来」。 */
+        void drawFull() {
+            p.reset();
+            p.setColor(Color.argb(Math.round(th.scrim * 255), 0, 0, 0));
+            c.drawRect(0, 0, X, H, p);
+            if (th.strip != null) c.drawBitmap(th.strip, null, new Rect(X, 0, FULL_W, H), new Paint(Paint.FILTER_BITMAP_FLAG));
+            if (d.rows.isEmpty()) return;
+            int[] dd = drift();
+            c.save();
+            c.translate(dd[0], dd[1]);
+            big();
+            c.translate(X, 0);
+            side();
+            c.restore();
+        }
+
+        void big() {
+            float x0 = 84, x1 = X - 84, top = 72, bottom = H - 66;
+            boolean tubes = "tubes".equals(th.layout);
+            float y;
+            if (tubes) y = header(th.title, x0, x1, top, th.head, 72 * 50 / 56f, th.accent, th.wideTitle ? .32f : .06f, 30, true);
+            else if ("cards".equals(th.layout)) y = header(th.title, x0, x1, top, th.head, 72 * 48 / 56f, th.ink, .01f, 30, true);
+            else y = header(th.title, x0, x1, top, th.head, 72, th.ink, .04f, 30, true);
+            String legend = "inkgold".equals(th.id) ? "金色是已经用掉的，红线是这一期的时间走到哪了"
+                    : "orbits".equals(th.layout) ? "每一道光环是一家，亮的是已经用掉的，白点是这一期的时间走到哪了"
+                    : "彩色是已经用掉的，白色细线是这一期的时间走到哪了";
+            float legTop = bottom - 30;
+            text(legend, x0, legTop, 30, font(th.text, 24, th.dim, 0), 0);
+            float rowTop = y + 30, rowBottom = legTop - 24;
+            if ("orbits".equals(th.layout)) {
+                bigOrbits(x0, x1, rowTop, rowBottom);
+                return;
+            }
+            int n = Math.min(4, d.rows.size());
+            float colW = (x1 - x0 - 30 * 3) / 4;
+            for (int i = 0; i < n; i++) {
+                Row r = d.rows.get(i);
+                float cx = x0 + i * (colW + 30) + colW / 2;
+                if (tubes) bigTube(r, cx, colW, rowTop, rowBottom);
+                else if ("cards".equals(th.layout)) bigCard(r, cx, colW, rowTop + 60, rowBottom - 40);
+                else bigRing(r, cx, rowTop, rowBottom);
+            }
+        }
+
+        /** 仪表下面三行字：名字、小字、几号重置。返回下沿。 */
+        float bigLabels(Row r, float cx, float top, String sub) {
+            text(r.name, cx, top + 8, 60, font(th.name, 48, th.ink, 0), 1);
+            text(sub, cx, top + 76, 34, font(th.text, 27, hot(r) ? th.hot : th.dim, 0), 1);
+            text(resetAt(r) + " 重置", cx, top + 118, 30, font(th.mono, 24, alpha(th.ink, .55f), 0), 1);
+            return top + 148;
+        }
+
+        void bigRing(Row r, float cx, float rowTop, float rowBottom) {
+            float h = 340 + 148, top = (rowTop + rowBottom - h) / 2;
+            int s = gaugeBegin(new RectF(cx - 180, top - 10, cx + 180, top + 350));
+            ring(r, cx, top, 340, 52);
+            gaugeEnd(s);
+            bigLabels(r, cx, top + 340, subText(r));
+        }
+
+        void bigTube(Row r, float cx, float colW, float rowTop, float rowBottom) {
+            float tubeH = 360, h = 56 + 16 + 112 + 26 + tubeH + 148, top = (rowTop + rowBottom - h) / 2;
+            int s = gaugeBegin(new RectF(cx - colW / 2, top, cx + colW / 2, top + h - 148));
+            logo(r.key, cx, top + 28, 56);
+            numWithUnit(usedText(r), "%", cx, top + 56 + 16, 112, font(th.num, 118, th.ink, 0), 40, 2, 1);
+            float tt = top + 56 + 16 + 112 + 26;
+            tube(r, cx, tt, tubeH, 14, 54);
+            gaugeEnd(s);
+            bigLabels(r, cx, tt + tubeH, r.sub + " · " + r.pace);
+        }
+
+        void bigCard(Row r, float cx, float colW, float top, float bottom) {
+            RectF card = new RectF(cx - colW / 2, top, cx + colW / 2, bottom);
+            int s = gaugeBegin(card);
+            glass(card, 44, .07f, .02f, .09f);
+            float content = 84 + 128 + 18 + 148 + 20 * 3, y = card.centerY() - content / 2;
+            RectF chip = new RectF(cx - 42, y, cx + 42, y + 84);
+            chip(chip, 24);
+            logo(r.key, cx, chip.centerY(), 46);
+            y += 84 + 20;
+            numWithUnit(usedText(r), "%", cx, y, 128, font(th.num, 150, th.ink, -.04f), 46, 2, 1);
+            y += 128 + 20;
+            capsule(r, new RectF(card.left + 24, y, card.right - 24, y + 18));
+            y += 18 + 20 - 8;
+            gaugeEnd(s);
+            bigLabels(r, cx, y, subText(r));
+        }
+
+        void side() {
+            boolean tubes = "tubes".equals(th.layout);
+            float x0 = tubes ? 84 : 46, x1 = W - 46, y = 72;
+            text(th.next, x0, y, 62, font(th.head, 50, th.ink, .08f), 0);
+            Row nx = soon.get(0);
+            y += 62 + 40;
+            float lx = x0;
+            if (th.logos.containsKey(nx.key)) {
+                logo(nx.key, x0 + 32, y + 32, 64);
+                lx += 64 + 18;
+            }
+            text(nx.name, lx, y, 64, font(th.name, 44, th.ink, 0), 0);
+            y += 64 + 18;
+            String[] in = resetIn(nx);
+            TextPaint np = font(th.num, 120, th.ink, -.03f);
+            Paint.FontMetrics fm = np.getFontMetrics();
+            float base = y + (120 - (fm.descent - fm.ascent)) / 2 - fm.ascent;
+            c.drawText(in[0], x0, base, np);
+            c.drawText(in[1] + "后重置", x0 + np.measureText(in[0]) + 10, base, font(th.text, 30, th.dim, 0));
+            y += 120 + 10;
+            text("重置前还剩 " + Math.round(100 - nx.used) + "%", x0, y, 34, font(th.text, 27, th.dim, 0), 0);
+            y += 34 + 46;
+            p.reset();
+            for (Row r : soon) {
+                p.setColor(th.line);
+                c.drawRect(x0, y, x1, y + 1, p);
+                float mid = y + 1 + 20 + 19;
+                float tx = x0;
+                if (th.logos.containsKey(r.key)) {
+                    logo(r.key, x0 + 18, mid, 36);
+                    tx += 36 + 16;
+                }
+                text(r.name, tx, mid - 19, 38, font(th.text, 30, th.ink, 0), 0);
+                text(resetAt(r), x1, mid - 19, 38, font(th.mono, 26, th.dim, 0), 2);
+                y += 1 + 20 + 38 + 20;
+            }
+            String stamp = stale ? "● 数据停在 " + hm(d.generatedAtMs) : "实时更新";
+            text(stamp, x0, H - 66 - 31, 31, font(th.text, 25, stale ? th.warn : th.dim, 0), 0);
         }
 
         // ---- 公共小件 ----
@@ -391,6 +593,12 @@ public final class RyuoPanel {
 
         static boolean sameDay(Calendar a, Calendar b) {
             return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR);
+        }
+
+        String md(long ms) {
+            Calendar t = Calendar.getInstance(d.tz);
+            t.setTimeInMillis(ms);
+            return String.format("%02d-%02d", t.get(Calendar.MONTH) + 1, t.get(Calendar.DAY_OF_MONTH));
         }
 
         String hm(long ms) {
@@ -457,17 +665,22 @@ public final class RyuoPanel {
 
         /** 头部：大标题 + 右边「● 13:48 更新」，过期时换成橙色提示条。返回下沿。 */
         float header(String title, float x0, float x1, float top, Typeface tf, float size, int color, float spacing) {
+            return header(title, x0, x1, top, tf, size, color, spacing, 24, false);
+        }
+
+        float header(String title, float x0, float x1, float top, Typeface tf, float size, int color, float spacing, float tsSize, boolean withDate) {
             text(title, x0, top, size, font(tf, size, color, spacing), 0);
             float bottom = top + size;
             if (!stale) {
-                TextPaint ts = font(th.mono, 24, th.dim, .02f);
-                String s = hm(d.generatedAtMs) + " 更新";
-                float w = text(s, x1, bottom - 30, 30, ts, 2);
+                TextPaint ts = font(th.mono, tsSize, th.dim, .02f);
+                String s = (withDate ? md(d.generatedAtMs) + " " : "") + hm(d.generatedAtMs) + " 更新";
+                float tsLh = tsSize * 1.25f;
+                float w = text(s, x1, bottom - tsLh, tsLh, ts, 2);
                 p.reset();
                 p.setAntiAlias(true);
                 p.setColor(th.accent);
                 p.setShadowLayer(12, 0, 0, th.accent);
-                c.drawCircle(x1 - w - 10 - 4, bottom - 15, 4, p);
+                c.drawCircle(x1 - w - 10 - 4, bottom - tsLh / 2, 4, p);
                 p.clearShadowLayer();
                 return bottom;
             }
@@ -544,7 +757,7 @@ public final class RyuoPanel {
 
         void rings() {
             float x0 = 42, x1 = W - 42;
-            float y = header("AI 额度", x0, x1, 46, th.head, 56, th.ink, .04f);
+            float y = header(th.title, x0, x1, 46, th.head, 56, th.ink, .04f);
             // 标题下的细线：一小段亮色 + 一截暗色
             p.reset();
             p.setColor(th.accent);
@@ -566,7 +779,7 @@ public final class RyuoPanel {
             // 接下来：带角标的框，贴底
             kColor = th.accent;
             float ix0 = x0 + 22, ix1 = x1 - 22;
-            float bodyH = nextBody("接下来", th.head, 28, .12f, ix0, ix1, 0, true);
+            float bodyH = nextBody(th.next, th.head, 28, .12f, ix0, ix1, 0, true);
             float bh = 18 + bodyH + 16, bt = H - 42 - bh;
             RectF box = new RectF(x0, bt, x1, bt + bh);
             p.reset();
@@ -584,7 +797,7 @@ public final class RyuoPanel {
             c.drawRect(l, tt, l + 2, tt + 18, p);
             c.drawRect(rr - 18, bb - 2, rr, bb, p);
             c.drawRect(rr - 2, bb - 18, rr, bb, p);
-            nextBody("接下来", th.head, 28, .12f, ix0, ix1, bt + 18, false);
+            nextBody(th.next, th.head, 28, .12f, ix0, ix1, bt + 18, false);
         }
 
         void ring(Row r, float cx, float top, float size, float logoPx) {
@@ -659,14 +872,14 @@ public final class RyuoPanel {
 
         void tubes() {
             float x0 = 76, x1 = W - 36;
-            float y = header("额度", x0, x1, 46, th.head, 50, th.accent, .32f);
+            float y = header(th.title, x0, x1, 46, th.head, 50, th.accent, th.wideTitle ? .32f : .06f);
             kColor = th.accent;
-            float bodyH = nextBody("下 一 更", th.head, 26, .3f, x0, x1, 0, true);
+            float bodyH = nextBody(th.next, th.head, 26, th.wideTitle ? .3f : .12f, x0, x1, 0, true);
             float nt = H - 42 - bodyH - 22 - 1;
             p.reset();
             p.setColor(th.line);
             c.drawRect(x0, nt, x1, nt + 1, p);
-            nextBody("下 一 更", th.head, 26, .3f, x0, x1, nt + 1 + 22, false);
+            nextBody(th.next, th.head, 26, th.wideTitle ? .3f : .12f, x0, x1, nt + 1 + 22, false);
             float colsTop = y + 40, colsBottom = nt - 30;
             float fixed = 40 + 16 + 70 + 22 + 20 + 40 + 4 + 27;
             float tubeH = Math.min(460, colsBottom - colsTop - fixed);
@@ -679,43 +892,124 @@ public final class RyuoPanel {
                 logo(r.key, cx, top + 20, 40);
                 numWithUnit(usedText(r), "%", cx, top + 40 + 16, 70, font(th.num, 74, th.ink, 0), 28, 1, 1);
                 float tt = top + 40 + 16 + 70 + 22, tb = tt + tubeH;
-                RectF tube = new RectF(cx - 5, tt, cx + 5, tb);
-                p.reset();
-                p.setAntiAlias(true);
-                p.setColor(0x1AC9A45C);
-                c.drawRoundRect(tube, 5, 5, p);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(1);
-                p.setColor(0x47C9A45C);
-                c.drawRoundRect(new RectF(tube.left + .5f, tube.top + .5f, tube.right - .5f, tube.bottom - .5f), 4.5f, 4.5f, p);
-                p.setStyle(Paint.Style.FILL);
-                float fh = tubeH * used(r) / 100;
-                if (fh > .5f) {
-                    boolean hot = hot(r);
-                    p.setColor(0xFF000000); // 渐变会乘上画笔的透明度，先还原成不透明
-                    p.setShader(new LinearGradient(0, tb, 0, tb - fh, hot ? 0xFF7D2A1C : 0xFF7A5A24, hot ? 0xFFE07055 : 0xFFE2C27A, Shader.TileMode.CLAMP));
-                    c.drawRoundRect(new RectF(tube.left, tb - fh, tube.right, tb), 5, 5, p);
-                    p.setShader(null);
-                }
-                float my = tb - tubeH * elapsed(r) / 100 - 3;
-                p.setColor(th.mark);
-                c.drawRoundRect(new RectF(cx - 18, my, cx + 18, my + 3), 2, 2, p);
+                tube(r, cx, tt, tubeH, 10, 36);
                 gaugeEnd(s);
                 text(r.name, cx, tb + 20, 40, font(th.name, 32, th.ink, .04f), 1);
                 text(r.sub, cx, tb + 64, 27, font(th.text, 21, hot(r) ? th.hot : alpha(th.accent, .85f), 0), 1);
             }
         }
 
+        // ---- 日冕：同心光环 ----
+
+        void orbits() {
+            float x0 = 42, x1 = W - 42;
+            float y = header(th.title, x0, x1, 46, th.head, 56, th.ink, .04f);
+            float size = 500, top = y + 22;
+            int s = gaugeBegin(new RectF(W / 2f - size / 2 - 10, top - 10, W / 2f + size / 2 + 10, top + size + 10));
+            orb(W / 2f, top + size / 2, size);
+            gaugeEnd(s);
+            float ly = top + size + 24;
+            for (int i = 0; i < d.rows.size() && i < 4; i++) {
+                Row r = d.rows.get(i);
+                p.reset();
+                p.setColor(th.line);
+                c.drawRect(x0, ly, x1, ly + 1, p);
+                legendRow(r, i, x0, x1, ly + 11, 60, 6, 46, 28, 28, 20, 46, 20, 14);
+                ly += 81;
+            }
+            Row nx = soon.get(0);
+            text(nx.name + " 重置前还剩 " + Math.round(100 - nx.used) + "% · " + paceLine(nx), x0, H - 42 - 31, 31, font(th.text, 22, th.dim, 0), 0);
+        }
+
+        void bigOrbits(float x0, float x1, float rowTop, float rowBottom) {
+            float size = 680, mid = (rowTop + rowBottom) / 2;
+            int s = gaugeBegin(new RectF(x0 - 10, mid - size / 2 - 10, x0 + size + 10, mid + size / 2 + 10));
+            orb(x0 + size / 2, mid, size);
+            gaugeEnd(s);
+            float lx0 = x0 + size + 60;
+            int n = Math.min(4, d.rows.size());
+            float rowH = 132, ly = mid - rowH * n / 2;
+            for (int i = 0; i < n; i++) {
+                p.reset();
+                p.setColor(th.line);
+                c.drawRect(lx0, ly, x1, ly + 1, p);
+                legendRow(d.rows.get(i), i, lx0, x1, ly + 23, 87, 8, 80, 52, 44, 26, 92, 34, 22);
+                ly += rowH;
+            }
+        }
+
+        /** 图例一行：色条、图标、名字和重置时间、右边百分数。top/h 是这一行内容区。 */
+        void legendRow(Row r, int i, float x0, float x1, float top, float h, float dotW, float dotH, float logoPx,
+                       float nameSize, float subSize, float pcSize, float pcUnit, float gap) {
+            float mid = top + h / 2;
+            p.reset();
+            p.setAntiAlias(true);
+            p.setColor(th.series[i % 4]);
+            c.drawRoundRect(new RectF(x0, mid - dotH / 2, x0 + dotW, mid + dotH / 2), dotW / 2, dotW / 2, p);
+            float x = x0 + dotW + gap;
+            if (th.logos.containsKey(r.key)) {
+                logo(r.key, x + logoPx / 2, mid, logoPx);
+                x += logoPx + gap;
+            }
+            float nLh = nameSize * 1.2f, sLh = subSize * 1.3f, bt = mid - (nLh + sLh) / 2;
+            text(r.name, x, bt, nLh, font(th.name, nameSize, th.ink, 0), 0);
+            text(resetAt(r) + " 重置", x, bt + nLh, sLh, font(th.text, subSize, hot(r) ? th.hot : th.dim, 0), 0);
+            numWithUnit(usedText(r), "%", x1, mid - pcSize / 2, pcSize, font(th.num, pcSize, th.ink, -.02f), pcUnit, 2, 2);
+        }
+
+        /** 四道同心光环，外圈是第一家；中间写最近一次重置的倒计时。 */
+        void orb(float cx, float cy, float size) {
+            float sw = size * .05f, gap = size * .08f, R0 = size / 2 - sw;
+            for (int i = 0; i < d.rows.size() && i < 4; i++) {
+                Row r = d.rows.get(i);
+                float R = R0 - i * gap;
+                int col = th.series[i % 4];
+                RectF oval = new RectF(cx - R, cy - R, cx + R, cy + R);
+                p.reset();
+                p.setAntiAlias(true);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(sw);
+                p.setColor(alpha(col, .13f));
+                c.drawCircle(cx, cy, R, p);
+                float sweep = Math.max(.4f, 360 * used(r) / 100);
+                p.setStrokeCap(Paint.Cap.ROUND);
+                p.setColor(alpha(col, .6f));
+                p.setMaskFilter(new BlurMaskFilter(size * .012f * 2, BlurMaskFilter.Blur.NORMAL));
+                c.drawArc(oval, -90, sweep, false, p);
+                p.setMaskFilter(null);
+                p.setColor(col);
+                c.drawArc(oval, -90, sweep, false, p);
+                double ea = Math.toRadians(-90 + 360 * elapsed(r) / 100);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(th.mark);
+                c.drawCircle(cx + R * (float) Math.cos(ea), cy + R * (float) Math.sin(ea), sw * .2f, p);
+            }
+            Row nx = soon.get(0);
+            String[] in = resetIn(nx);
+            float k = size / 500;
+            float nLh = 76 * k, uLh = 26 * k, wLh = 28 * k, total = nLh + 6 * k + uLh + 6 * k + wLh;
+            float y = cy - total / 2;
+            text(in[0], cx, y, nLh, font(th.num, 84 * k, th.ink, -.03f), 1);
+            y += nLh + 6 * k;
+            text(in[1] + "后重置", cx, y, uLh, font(th.text, 21 * k, th.dim, 0), 1);
+            y += uLh + 6 * k;
+            TextPaint wp = font(th.name, 22 * k, th.ink, 0);
+            float lp = th.logos.containsKey(nx.key) ? size * .045f : 0;
+            float ww = lp + (lp > 0 ? 8 * k : 0) + wp.measureText(nx.name), wx = cx - ww / 2;
+            if (lp > 0) logo(nx.key, wx + lp / 2, y + wLh / 2, lp);
+            text(nx.name, wx + ww, y, wLh, wp, 2);
+        }
+
         // ---- 液态光谱：玻璃卡 ----
 
         void cards() {
             float x0 = 42, x1 = W - 42;
-            float y = header("AI 额度", x0, x1, 46, th.head, 48, th.ink, .01f);
+            float y = header(th.title, x0, x1, 46, th.head, 48, th.ink, .01f);
             kColor = th.dim;
-            float bodyH = nextBody("接下来", th.text, 22, .2f, x0 + 24, x1 - 24, 0, true);
+            float bodyH = nextBody(th.next, th.text, 22, .2f, x0 + 24, x1 - 24, 0, true);
             float bh = 18 + bodyH + 18, bt = H - 42 - bh;
             glass(new RectF(x0, bt, x1, bt + bh), 28, .04f, .04f, .07f);
-            nextBody("接下来", th.text, 22, .2f, x0 + 24, x1 - 24, bt + 18, false);
+            nextBody(th.next, th.text, 22, .2f, x0 + 24, x1 - 24, bt + 18, false);
             float top = y + 28, bottom = bt - 16;
             int n = Math.min(4, d.rows.size());
             float ch = (bottom - top - 14 * (n - 1)) / n;
@@ -729,15 +1023,7 @@ public final class RyuoPanel {
                 float mid = contentTop + rowH / 2;
                 // 图标小方块
                 RectF chip = new RectF(cx0, mid - 29, cx0 + 58, mid + 29);
-                p.reset();
-                p.setAntiAlias(true);
-                p.setColor(0x14FFFFFF);
-                c.drawRoundRect(chip, 17, 17, p);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(1);
-                p.setColor(0x1AFFFFFF);
-                c.drawRoundRect(chip, 17, 17, p);
-                p.setStyle(Paint.Style.FILL);
+                chip(chip, 17);
                 logo(r.key, chip.centerX(), chip.centerY(), 32);
                 float wx = cx0 + 58 + 16;
                 text(r.name, wx, mid - 31.5f, 35, font(th.name, 32, th.ink, 0), 0);
@@ -745,20 +1031,73 @@ public final class RyuoPanel {
                 numWithUnit(usedText(r), "%", cx1, contentTop, rowH, font(th.num, 86, th.ink, -.04f), 30, 2, 2);
                 // 胶囊条
                 float capTop = contentTop + rowH + 14;
-                RectF cap = new RectF(cx0, capTop, cx1, capTop + 14);
-                p.setColor(0x12FFFFFF);
-                c.drawRoundRect(cap, 7, 7, p);
-                float fw = cap.width() * Math.max(2, used(r)) / 100;
-                boolean hot = hot(r);
-                p.setColor(0xFF000000);
-                p.setShader(new LinearGradient(cap.left, 0, cap.left + fw, 0, hot ? 0xFFF59E0B : 0xFF8B5CF6, hot ? 0xFFEF4444 : 0xFF22D3EE, Shader.TileMode.CLAMP));
-                c.drawRoundRect(new RectF(cap.left, cap.top, cap.left + fw, cap.bottom), 7, 7, p);
-                p.setShader(null);
-                float mx = cap.left + cap.width() * elapsed(r) / 100;
-                p.setColor(0xE6FFFFFF);
-                c.drawRoundRect(new RectF(mx - 2, cap.top - 7, mx + 2, cap.bottom + 7), 2, 2, p);
+                capsule(r, new RectF(cx0, capTop, cx1, capTop + 14));
                 gaugeEnd(s);
             }
+        }
+
+        /** 用量渐变：平时从主题的第二色到主色，用得太快时换成暖色。 */
+        int[] fill(Row r) {
+            if (!hot(r)) return new int[]{th.accent2, th.accent};
+            int h = th.hot;
+            return new int[]{Color.rgb(Color.red(h) * 55 / 100, Color.green(h) * 55 / 100, Color.blue(h) * 55 / 100), h};
+        }
+
+        /** 竖着的漏刻：底色细管 + 从下往上的用量 + 一道时间刻线。 */
+        void tube(Row r, float cx, float tt, float tubeH, float w, float markW) {
+            float tb = tt + tubeH, rad = Math.min(5, w / 2);
+            RectF tube = new RectF(cx - w / 2, tt, cx + w / 2, tb);
+            p.reset();
+            p.setAntiAlias(true);
+            p.setColor(alpha(th.accent, .10f));
+            c.drawRoundRect(tube, rad, rad, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(1);
+            p.setColor(alpha(th.accent, .28f));
+            c.drawRoundRect(new RectF(tube.left + .5f, tube.top + .5f, tube.right - .5f, tube.bottom - .5f), rad - .5f, rad - .5f, p);
+            p.setStyle(Paint.Style.FILL);
+            float fh = tubeH * used(r) / 100;
+            if (fh > .5f) {
+                int[] g = fill(r);
+                p.setColor(0xFF000000); // 渐变会乘上画笔的透明度，先还原成不透明
+                p.setShader(new LinearGradient(0, tb, 0, tb - fh, g[0], g[1], Shader.TileMode.CLAMP));
+                c.drawRoundRect(new RectF(tube.left, tb - fh, tube.right, tb), rad, rad, p);
+                p.setShader(null);
+            }
+            float my = tb - tubeH * elapsed(r) / 100 - 3;
+            p.setColor(th.mark);
+            c.drawRoundRect(new RectF(cx - markW / 2, my, cx + markW / 2, my + 3), 2, 2, p);
+        }
+
+        /** 横着的胶囊条。 */
+        void capsule(Row r, RectF cap) {
+            float rad = cap.height() / 2;
+            p.reset();
+            p.setAntiAlias(true);
+            p.setColor(0x12FFFFFF);
+            c.drawRoundRect(cap, rad, rad, p);
+            float fw = cap.width() * Math.max(2, used(r)) / 100;
+            int[] g = fill(r);
+            p.setColor(0xFF000000);
+            p.setShader(new LinearGradient(cap.left, 0, cap.left + fw, 0, g[0], g[1], Shader.TileMode.CLAMP));
+            c.drawRoundRect(new RectF(cap.left, cap.top, cap.left + fw, cap.bottom), rad, rad, p);
+            p.setShader(null);
+            float mx = cap.left + cap.width() * elapsed(r) / 100;
+            p.setColor(alpha(th.mark, .9f));
+            c.drawRoundRect(new RectF(mx - 2, cap.top - rad, mx + 2, cap.bottom + rad), 2, 2, p);
+        }
+
+        /** 放图标的玻璃小方块。 */
+        void chip(RectF chip, float rad) {
+            p.reset();
+            p.setAntiAlias(true);
+            p.setColor(0x14FFFFFF);
+            c.drawRoundRect(chip, rad, rad, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(1);
+            p.setColor(0x1AFFFFFF);
+            c.drawRoundRect(chip, rad, rad, p);
+            p.setStyle(Paint.Style.FILL);
         }
 
         void glass(RectF r, float radius, float a0, float a1, float stroke) {

@@ -1,0 +1,39 @@
+{
+  "id": "eclipse",
+  "name": "日冕",
+  "summary": "日全食的金白日冕，四家用量画成同心的四道光环。",
+  "layout": "orbits",
+  "colors": {
+    "title": "#FFC56B",
+    "content": "#F6F1E8"
+  },
+  "assets": {
+    "full": "assets/full.jpg",
+    "main": "assets/main.jpg",
+    "strip": "assets/strip.jpg",
+    "reference": "assets/ref-wide.png"
+  },
+  "videos": [],
+  "native_fonts": {
+    "head": {
+      "file": "fonts/Sora-600.ttf"
+    },
+    "num": {
+      "file": "fonts/Sora-300.ttf"
+    },
+    "name": {
+      "file": "fonts/Sora-600.ttf"
+    },
+    "text": null,
+    "mono": {
+      "file": "fonts/GeistMono-500.ttf"
+    }
+  },
+  "scrim": 0.8,
+  "series": [
+    "#FFD27A",
+    "#FF8B4A",
+    "#F3EBDD",
+    "#E0503A"
+  ]
+}

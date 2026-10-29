@@ -1,0 +1,33 @@
+{
+  "id": "aurora",
+  "name": "北境极光",
+  "summary": "极夜里的绿紫极光和冰湖倒影，磨砂玻璃卡片。",
+  "layout": "cards",
+  "colors": {
+    "title": "#5EF2B0",
+    "content": "#EAF6F2"
+  },
+  "assets": {
+    "full": "assets/full.jpg",
+    "main": "assets/main.jpg",
+    "strip": "assets/strip.jpg",
+    "reference": "assets/ref-wide.png"
+  },
+  "videos": [],
+  "native_fonts": {
+    "head": {
+      "file": "fonts/Sora-600.ttf"
+    },
+    "num": {
+      "file": "fonts/Sora-300.ttf"
+    },
+    "name": {
+      "file": "fonts/Sora-600.ttf"
+    },
+    "text": null,
+    "mono": {
+      "file": "fonts/GeistMono-500.ttf"
+    }
+  },
+  "scrim": 0.8
+}

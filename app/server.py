@@ -21,7 +21,8 @@ WEB = ROOT / "app" / "web"
 CONF_DIR = Path.home() / ".config" / "ryuo-studio"
 CONF = CONF_DIR / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
-DEFAULT_CONF = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False}
+DEFAULT_CONF = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False,
+                "renderer": "native", "full_show_seconds": 15, "full_hide_seconds": 45}
 PORT = 7788
 
 JOBS = {}
@@ -151,11 +152,12 @@ class H(BaseHTTPRequestHandler):
         b = self.body()
         conf = load_conf()
         if p == "/api/conf":
-            for k in ("theme", "layout", "push_minutes"):
+            for k in ("theme", "layout", "push_minutes", "renderer", "full_show_seconds", "full_hide_seconds"):
                 if k in b:
                     conf[k] = b[k]
             save_conf(conf)
-            log(f"设置已保存：主题 {conf['theme']} · {'分屏' if conf['layout'] == 'split' else '整屏'} · 每 {conf['push_minutes']} 分钟推一次")
+            how = "实时" if conf.get("renderer", "native") == "native" else f"每 {conf['push_minutes']} 分钟推一次图"
+            log(f"设置已保存：主题 {conf['theme']} · {'分屏' if conf['layout'] == 'split' else '整屏'} · {how}")
             return self.send(200, conf)
         if p == "/api/video":
             theme = b.get("theme", conf["theme"])

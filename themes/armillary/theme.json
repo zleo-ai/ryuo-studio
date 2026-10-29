@@ -1,0 +1,40 @@
+{
+  "id": "armillary",
+  "name": "浑天铜仪",
+  "summary": "悬在夜空里的青铜浑天仪，金色细刻度的环形表。",
+  "layout": "rings",
+  "colors": {
+    "title": "#D9B26A",
+    "content": "#F1E7D2"
+  },
+  "assets": {
+    "full": "assets/full.jpg",
+    "main": "assets/main.jpg",
+    "strip": "assets/strip.jpg",
+    "reference": "assets/ref-wide.png"
+  },
+  "videos": [],
+  "native_fonts": {
+    "head": {
+      "file": "fonts/NotoSerifCJK-Medium.ttc",
+      "ttc": 2
+    },
+    "num": {
+      "file": "fonts/Cormorant-600.ttf",
+      "fallback": "serif"
+    },
+    "name": {
+      "file": "fonts/Cormorant-600.ttf",
+      "fallback": "serif"
+    },
+    "text": {
+      "file": "fonts/NotoSerifCJK-Regular.ttc",
+      "ttc": 2
+    },
+    "mono": {
+      "file": "fonts/Cormorant-600.ttf",
+      "fallback": "serif"
+    }
+  },
+  "scrim": 0.76
+}

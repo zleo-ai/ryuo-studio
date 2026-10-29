@@ -6,6 +6,7 @@
 <title>龙屏管理器</title>
 <link rel="stylesheet" href="/repo/themes/_shared/fonts/fonts.css">
 <style>
+[hidden]{display:none!important}
 :root{--bg:#F5F6F8;--panel:#FFFFFF;--ink:#0E1116;--dim:#5B6472;--line:#E3E6EB;--accent:#0E9F8E;--accentInk:#fff;--warn:#B86A00;--ok:#0E9F8E;--chip:#EEF1F4}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0B0D11;--panel:#13161C;--ink:#E8ECF1;--dim:#8D96A3;--line:#232832;--accent:#2DE2C8;--accentInk:#062723;--warn:#FFB547;--ok:#2DE2C8;--chip:#1B1F27}}
 :root[data-theme="dark"]{--bg:#0B0D11;--panel:#13161C;--ink:#E8ECF1;--dim:#8D96A3;--line:#232832;--accent:#2DE2C8;--accentInk:#062723;--warn:#FFB547;--ok:#2DE2C8;--chip:#1B1F27}
@@ -88,8 +89,13 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
   <section>
     <h2>推送设置</h2>
     <div class="row">
-      <div class="seg" id="layoutSeg"><button data-v="split">分屏（视频 + 用量窄条）</button><button data-v="full">整屏（视频和用量轮流）</button></div>
-      <label class="f">每 <select id="mins"><option>5</option><option>10</option><option selected>15</option><option>30</option></select> 分钟刷新一次用量</label>
+      <div class="seg" id="layoutSeg"><button data-v="split">分屏（视频 + 用量窄条）</button><button data-v="full">整屏（视频，用量定时浮出）</button></div>
+      <div class="seg" id="rendSeg"><button data-v="native">实时（屏上原生绘制）</button><button data-v="png">图片（定时推图）</button></div>
+    </div>
+    <div class="row">
+      <label class="f" id="fullOpt">整屏时用量每 <select id="hide"><option value="30">30 秒</option><option value="45" selected>45 秒</option><option value="90">90 秒</option><option value="180">3 分钟</option></select>
+        浮出一次，停 <select id="show"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select></label>
+      <label class="f" id="minsOpt">图片每 <select id="mins"><option>5</option><option>10</option><option selected>15</option><option>30</option></select> 分钟刷新一次</label>
     </div>
     <p class="note" id="devNote"></p>
   </section>
@@ -121,6 +127,12 @@ async function load() {
   $("#log").innerHTML = S.log.slice().reverse().map(l => `<li><span>${l.t}</span><span>${esc(l.msg)}</span></li>`).join("");
   document.querySelectorAll("#layoutSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === c.layout));
   $("#mins").value = String(c.push_minutes);
+  const rend = c.renderer || "native";
+  document.querySelectorAll("#rendSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === rend));
+  $("#hide").value = String(c.full_hide_seconds || 45);
+  $("#show").value = String(c.full_show_seconds || 15);
+  $("#fullOpt").hidden = !(rend === "native" && c.layout === "full");
+  $("#minsOpt").hidden = rend === "native";
 }
 async function preview() {
   const t = S.conf.theme, d = $("#stale").checked ? "stale" : "fresh";
@@ -138,6 +150,9 @@ $("#viewSeg").addEventListener("click", e => {
 });
 $("#layoutSeg").addEventListener("click", async e => { const b = e.target.closest("button"); if (b) { await api("/api/conf", {layout: b.dataset.v}); load(); } });
 $("#mins").addEventListener("change", async () => { await api("/api/conf", {push_minutes: +$("#mins").value}); load(); });
+$("#rendSeg").addEventListener("click", async e => { const b = e.target.closest("button"); if (b) { await api("/api/conf", {renderer: b.dataset.v}); load(); } });
+$("#hide").addEventListener("change", async () => { await api("/api/conf", {full_hide_seconds: +$("#hide").value}); load(); });
+$("#show").addEventListener("change", async () => { await api("/api/conf", {full_show_seconds: +$("#show").value}); load(); });
 $("#stale").addEventListener("change", preview);
 $("#refresh").addEventListener("click", preview);
 $("#gen").addEventListener("click", async () => {

@@ -1,0 +1,37 @@
+{
+  "id": "neon",
+  "name": "雨夜霓虹",
+  "summary": "下着雨的未来街区，品红和青色的竖向霓虹灯管当用量条。",
+  "layout": "tubes",
+  "colors": {
+    "title": "#FF3EA5",
+    "content": "#F5ECFF"
+  },
+  "assets": {
+    "full": "assets/full.jpg",
+    "main": "assets/main.jpg",
+    "strip": "assets/strip.jpg",
+    "reference": "assets/ref-wide.png"
+  },
+  "videos": [],
+  "native_fonts": {
+    "head": {
+      "file": "fonts/SpaceGrotesk-700.ttf"
+    },
+    "num": {
+      "file": "fonts/SpaceGrotesk-500.ttf"
+    },
+    "name": {
+      "file": "fonts/SpaceGrotesk-700.ttf"
+    },
+    "text": null,
+    "mono": {
+      "file": "fonts/GeistMono-500.ttf"
+    }
+  },
+  "scrim": 0.78,
+  "labels": {
+    "title": "AI 额度",
+    "next": "接下来"
+  }
+}

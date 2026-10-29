@@ -2,10 +2,11 @@
 """常驻推送：每秒给屏发心跳，同时把额度面板送上屏。
 
 面板有两种送法（config 里的 renderer）：
-  native（默认，只用于分屏）：屏上跑一个原生绘制的常驻程序（tools/native_panel.py），
+  native（默认）：屏上跑一个原生绘制的常驻程序（tools/native_panel.py），
       电脑每分钟送一次数据、每 5 秒保活，倒计时在屏上按秒走；换主题或布局时才重发一次 config。
-      屏上程序起不来时，窄条上还有一张同主题的静态图兜底。
-  png：主机画好图，按 push_minutes 推上屏（做法甲）。整屏布局总是走这种。
+      分屏：面板盖在右边窄条上，底下垫一张同主题的静态图兜底。
+      整屏：屏只循环放视频，面板每隔 full_hide_seconds 秒淡入盖在压暗的视频上 full_show_seconds 秒。
+  png：主机画好图，按 push_minutes 推上屏（做法甲）。
 
   python3 -I tools/pusher.py            # 读 ~/.config/ryuo-studio/config.json
   python3 -I tools/pusher.py --once     # 只推一轮就退出（调试用）
@@ -34,7 +35,8 @@ from ryuo.transport import FakeTransport  # noqa: E402
 CONF = Path.home() / ".config" / "ryuo-studio" / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 SCREEN_DIR = "/sdcard/pcMedia/"
-DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False, "renderer": "native"}
+DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False, "renderer": "native",
+            "full_show_seconds": 15, "full_hide_seconds": 45}
 NATIVE_TICK_S, NATIVE_DATA_S = 5, 60
 
 
@@ -121,12 +123,15 @@ class Screen:
         return 0 if self.live else len(self.fake.frames)
 
 
-def push_round(scr, c, turn, pushed_videos, last):
+def push_round(scr, c, turn, pushed_videos, last, native=False):
+    """native=True 且整屏时只放视频（面板由屏上程序叠上去），不用出图。"""
     theme, layout = c["theme"], c["layout"]
-    view = "strip" if layout == "split" else "usage"
-    png = render(theme, view)
-    name = f"lp-panel-{time.strftime('%m%d%H%M%S')}.png"
-    scr.adb("push", str(png), SCREEN_DIR + name)
+    video_only = native and layout != "split"
+    name = None
+    if not video_only:
+        png = render(theme, "strip" if layout == "split" else "usage")
+        name = f"lp-panel-{time.strftime('%m%d%H%M%S')}.png"
+        scr.adb("push", str(png), SCREEN_DIR + name)
 
     video = latest_video(theme, "main" if layout == "split" else "full")
     if video and video.name not in pushed_videos:
@@ -140,6 +145,8 @@ def push_round(scr, c, turn, pushed_videos, last):
         dev.set_media([name], zone=1)
         # 1.0.7 实测：分屏时第三个读数会画到右边窄条上，所以只留两个
         dev.set_slots(["Date&Time", "CPU Temperature"])
+    elif video_only:
+        dev.set_media([video.name] if video else [], play_mode="Single")
     else:  # 整屏：视频和用量大图轮流放
         dev.set_media(([video.name] if video else []) + [name], play_mode="Cycle" if video else "Single")
         dev.set_slots(["Date&Time", "CPU Temperature", "GPU Temperature"])
@@ -150,7 +157,7 @@ def push_round(scr, c, turn, pushed_videos, last):
     if last.get("name"):
         dev.delete_media([last["name"]])
     last["name"] = name
-    say(f"第 {turn + 1} 轮：{theme} · {'分屏' if layout == 'split' else '整屏'} · {name}" + ("" if scr.live else f"（演练，已组 {scr.frames_sent()} 帧）"))
+    say(f"第 {turn + 1} 轮：{theme} · {'分屏' if layout == 'split' else '整屏'} · {name or '只放视频'}" + ("" if scr.live else f"（演练，已组 {scr.frames_sent()} 帧）"))
 
 
 def main():
@@ -165,26 +172,30 @@ def main():
         native = native_panel.NativePanel()
     say("开始推送" + ("" if scr.live else "（演练模式：不连屏幕）"))
     pushed, turn, last = set(), 0, {}
-    applied, data_at = None, 0.0
+    applied, data_at, sent_mode = None, 0.0, None
     with scr.dev.heartbeat(telemetry):
         while True:
             c = conf()
-            use_native = native is not None and c["renderer"] == "native" and c["layout"] == "split"
+            use_native = native is not None and c["renderer"] == "native"
             key = (c["theme"], c["layout"], use_native)
             wait = max(1, int(c["push_minutes"])) * 60
             try:
                 if use_native:
                     wait = NATIVE_TICK_S
                     if key != applied:  # 换了主题或布局：重发一次 config，窄条先放静态图兜底
-                        push_round(scr, c, turn, pushed, last)
+                        push_round(scr, c, turn, pushed, last, native=True)
                         turn += 1
                         applied = key
                         native_panel.build_bundle(c["theme"])
                         native.close()  # 下面重连时顺带把新主题的文件同步上去
                         data_at = 0
                     fresh = native.ensure()
+                    mode = {"full": c["layout"] != "split", "show": c["full_show_seconds"], "hide": c["full_hide_seconds"]}
+                    if mode != sent_mode:  # 只改了浮出节奏：马上送，不用重发 config
+                        data_at = 0
                     if fresh or time.time() - data_at >= NATIVE_DATA_S:
-                        native.send({"t": "state", "theme": native_panel.theme_spec(c["theme"]), "data": native_panel.fresh_data()})
+                        sent_mode = mode
+                        native.send({"t": "state", "theme": native_panel.theme_spec(c["theme"]), "data": native_panel.fresh_data(), "mode": mode})
                         if fresh or data_at == 0:
                             say(f"原生面板已连上：{c['theme']}")
                         data_at = time.time()

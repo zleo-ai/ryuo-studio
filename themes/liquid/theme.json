@@ -28,5 +28,6 @@
     "mono": {
       "file": "fonts/GeistMono-500.ttf"
     }
-  }
+  },
+  "scrim": 0.84
 }

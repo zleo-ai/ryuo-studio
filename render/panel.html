@@ -5,7 +5,8 @@
 <title>龙屏面板</title>
 <!--
   参数（地址栏 ?a=b）：
-  theme = starship 星舰舱 | inkgold 墨夜流金 | liquid 液态光谱
+  theme = themes/ 下任一主题的 id（starship 星舰舱、inkgold 墨夜流金、liquid 液态光谱、aurora 北境极光、
+          armillary 浑天铜仪、neon 雨夜霓虹、eclipse 日冕）；主题清单由 tools/snapshot.py 写进 data.js
   view  = strip   窄条（634×1080，分屏时推上屏的那张）
         | usage   用量整屏（2240×1080，整屏模式里夹在视频之间放）
         | preview 效果图：主区背景 + 屏幕自带的时钟温度 + 窄条
@@ -75,14 +76,15 @@ body.only-strip{width:var(--z2)}
 /* ===== 墨夜流金：漏刻 ===== */
 .L-tubes .pane{padding-left:76px;padding-right:36px}
 .L-tubes .hd h1{font-weight:500;font-size:50px;letter-spacing:.32em;color:var(--accent)}
+.L-tubes.wide-title .hd h1{letter-spacing:.06em}
 .L-tubes .cols{display:grid;grid-template-columns:repeat(4,1fr);margin-top:40px;flex:1}
 .L-tubes .col{display:flex;flex-direction:column;align-items:center}
 .L-tubes .col .logo{width:40px;height:40px;color:var(--logo-ink)}
 .L-tubes .col .n{margin-top:16px;font-family:var(--f-num);font-weight:600;font-size:74px;line-height:.95}
 .L-tubes .col .n small{font-size:28px;color:var(--dim);margin-left:1px}
-.L-tubes .tube{position:relative;margin-top:22px;width:10px;flex:1;max-height:460px;border-radius:5px;background:rgba(201,164,92,.10);box-shadow:inset 0 0 0 1px rgba(201,164,92,.28)}
-.L-tubes .tube i{position:absolute;left:0;right:0;bottom:0;border-radius:5px;background:linear-gradient(0deg,#7a5a24,#e2c27a)}
-.L-tubes .tube i.hot{background:linear-gradient(0deg,#7d2a1c,#e07055)}
+.L-tubes .tube{position:relative;margin-top:22px;width:10px;flex:1;max-height:460px;border-radius:5px;background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 28%,transparent)}
+.L-tubes .tube i{position:absolute;left:0;right:0;bottom:0;border-radius:5px;background:linear-gradient(0deg,var(--accent2),var(--accent))}
+.L-tubes .tube i.hot{background:linear-gradient(0deg,color-mix(in srgb,var(--hot) 55%,#000),var(--hot))}
 .L-tubes .tube b{position:absolute;left:-13px;right:-13px;height:3px;background:var(--mark);border-radius:2px}
 .L-tubes .col .nm{margin-top:20px;font-family:var(--f-name);font-weight:600;font-size:32px;letter-spacing:.04em}
 .L-tubes .col .sb{font-size:21px;color:var(--accent);opacity:.85;margin-top:4px}
@@ -103,11 +105,40 @@ body.only-strip{width:var(--z2)}
 .L-cards .n{margin-left:auto;font-family:var(--f-num);font-weight:300;font-size:86px;line-height:.85;letter-spacing:-.04em}
 .L-cards .n small{font-size:30px;color:var(--dim);margin-left:2px;letter-spacing:0}
 .L-cards .cap{position:relative;height:14px;border-radius:7px;background:rgba(255,255,255,.07)}
-.L-cards .cap i{position:absolute;left:0;top:0;bottom:0;border-radius:7px;background:linear-gradient(90deg,#8B5CF6,#22D3EE)}
-.L-cards .cap i.hot{background:linear-gradient(90deg,#F59E0B,#EF4444)}
-.L-cards .cap b{position:absolute;top:-7px;bottom:-7px;width:4px;margin-left:-2px;border-radius:2px;background:#fff;opacity:.9}
+.L-cards .cap i{position:absolute;left:0;top:0;bottom:0;border-radius:7px;background:linear-gradient(90deg,var(--accent2),var(--accent))}
+.L-cards .cap i.hot{background:linear-gradient(90deg,color-mix(in srgb,var(--hot) 55%,#000),var(--hot))}
+.L-cards .cap b{position:absolute;top:-7px;bottom:-7px;width:4px;margin-left:-2px;border-radius:2px;background:var(--mark);opacity:.9}
 .L-cards .next{margin-top:16px;padding:18px 24px;border-radius:28px;background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
 .L-cards .next .k{font-family:var(--f-text);font-size:22px;letter-spacing:.2em;color:var(--dim)}
+
+/* ===== 日冕：同心光环 ===== */
+.L-orbits .orb{position:relative;width:500px;height:500px;margin:22px auto 0;flex:none}
+.L-orbits .orb .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.L-orbits .orb .c .n{font-family:var(--f-num);font-weight:300;font-size:84px;line-height:.9;letter-spacing:-.03em}
+.L-orbits .orb .c .u{font-size:21px;color:var(--dim);margin-top:6px}
+.L-orbits .orb .c .w{display:flex;align-items:center;gap:8px;font-family:var(--f-name);font-weight:600;font-size:22px;margin-top:6px}
+.L-orbits .lg{list-style:none;margin-top:24px}
+.L-orbits .lg li{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line)}
+.L-orbits .lg .dot{flex:none;width:6px;height:46px;border-radius:3px}
+.L-orbits .lg .who{min-width:0}
+.L-orbits .lg .nm{font-family:var(--f-name);font-weight:600;font-size:28px;line-height:1.2}
+.L-orbits .lg .sb{font-size:20px;color:var(--dim);white-space:nowrap}
+.L-orbits .lg .sb.hot{color:var(--hot)}
+.L-orbits .lg .pc{margin-left:auto;font-family:var(--f-num);font-weight:300;font-size:46px;line-height:1}
+.L-orbits .lg .pc small{font-size:20px;color:var(--dim);margin-left:2px}
+.L-orbits .foot{margin-top:auto;font-size:22px;color:var(--dim);line-height:1.4}
+.L-orbits .big .row{display:flex;gap:60px;align-items:center;justify-content:center}
+.L-orbits .big .orb{width:680px;height:680px;margin:0}
+.L-orbits .big .orb .c .n{font-size:150px}
+.L-orbits .big .orb .c .u{font-size:30px}
+.L-orbits .big .orb .c .w{font-size:32px}
+.L-orbits .big .lg{flex:1;margin:0}
+.L-orbits .big .lg li{padding:22px 0;gap:22px}
+.L-orbits .big .lg .dot{width:8px;height:80px}
+.L-orbits .big .lg .nm{font-size:44px}
+.L-orbits .big .lg .sb{font-size:26px}
+.L-orbits .big .lg .pc{font-size:92px}
+.L-orbits .big .lg .pc small{font-size:34px}
 
 /* ===== 用量整屏 ===== */
 .big{position:absolute;inset:0;display:flex;flex-direction:column;padding:72px 84px 66px}
@@ -159,13 +190,11 @@ body.only-strip{width:var(--z2)}
 const view = P.get("view") || "strip";
 const dx = +(P.get("dx") || 0), dy = +(P.get("dy") || 0);
 const S = window.SNAP, LOGOS = window.LOGOS || {};
-const THEMES = {starship: {layout: "rings", title: "#2DE2C8", content: "#E6EEF6"},
-                inkgold: {layout: "tubes", title: "#C9A45C", content: "#EFE7D4"},
-                liquid: {layout: "cards", title: "#B69CFF", content: "#FFFFFF"}};
-const TH = THEMES[THEME];
+const TH = (window.THEMES || {})[THEME];
+const LB = TH.labels || (TH.layout === "tubes" ? {title: "额度", next: "下 一 更"} : {title: "AI 额度", next: "接下来"});
 const asset = n => `../themes/${THEME}/assets/${n}.jpg`;
 const scr = document.getElementById("screen");
-scr.className = `theme L-${TH.layout}` + (S.stale ? " stale" : "");
+scr.className = `theme L-${TH.layout}` + (S.stale ? " stale" : "") + (TH.labels ? " wide-title" : "");
 if (view === "strip") document.body.classList.add("only-strip");
 const rows = S.rows.filter(r => !r.missing);
 const byResetSoon = [...rows].sort((x, y) => x.resetMs - y.resetMs);
@@ -208,22 +237,50 @@ function nextBlock(label) {
   </div>`;
 }
 
+const paceLine = r => ({"偏快": "用得偏快，悠着点", "正好": "节奏正好"}[r.pace] || "还有富余，放心用");
+const seriesColor = i => (TH.series || [])[i % 4] || "var(--accent)";
+
+// 同心光环：外圈是第一家，往里依次排；亮的弧是已用掉的，白点是这一期的时间进度
+function orbits(size) {
+  const cx = size / 2, sw = size * .05, gap = size * .08, R0 = size / 2 - sw;
+  const rings = rows.slice(0, 4).map((r, i) => {
+    const R = R0 - i * gap, C = 2 * Math.PI * R, col = seriesColor(i);
+    const ea = (-90 + 360 * r.elapsed / 100) * Math.PI / 180;
+    return `<circle cx="${cx}" cy="${cx}" r="${R}" fill="none" stroke="${col}" stroke-opacity=".13" stroke-width="${sw}"/>
+      <circle cx="${cx}" cy="${cx}" r="${R}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${Math.max(1, C * r.used / 100)} ${C}" transform="rotate(-90 ${cx} ${cx})" filter="url(#og${size})" opacity=".6"/>
+      <circle cx="${cx}" cy="${cx}" r="${R}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${Math.max(1, C * r.used / 100)} ${C}" transform="rotate(-90 ${cx} ${cx})"/>
+      <circle cx="${cx + R * Math.cos(ea)}" cy="${cx + R * Math.sin(ea)}" r="${sw * .2}" fill="var(--mark)"/>`;
+  }).join("");
+  const nx = byResetSoon[0], m = nx.resetIn.match(/^(\d+) (.+)$/);
+  return `<div class="orb gauge" style="width:${size}px;height:${size}px"><svg width="${size}" height="${size}">
+    <defs><filter id="og${size}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${size * .012}"/></filter></defs>${rings}</svg>
+    <div class="c"><div class="n">${m[1]}</div><div class="u">${m[2]}后重置</div><div class="w">${logo(nx.key, size * .045)}${nx.name}</div></div></div>`;
+}
+function legendRow(r, i, logoPx) {
+  return `<li><span class="dot" style="background:${seriesColor(i)}"></span>${logo(r.key, logoPx)}
+    <div class="who"><div class="nm">${r.name}</div><div class="${sbCls(r)}">${r.resetAt} 重置</div></div>
+    <div class="pc">${r.used}<small>%</small></div></li>`;
+}
+
 // ---------- 窄条 634×1080 ----------
 function strip() {
-  if (TH.layout === "rings") return `<div class="pane">${head("AI 额度")}<div class="rule"></div>
+  if (TH.layout === "orbits") return `<div class="pane">${head(LB.title)}${orbits(500)}
+    <ul class="lg">${rows.map((r, i) => legendRow(r, i, 28)).join("")}</ul>
+    <div class="foot">${byResetSoon[0].name} 重置前还剩 ${byResetSoon[0].left}% · ${paceLine(byResetSoon[0])}</div></div>`;
+  if (TH.layout === "rings") return `<div class="pane">${head(LB.title)}<div class="rule"></div>
     <div class="grid">${rows.map(r => `<div class="cell">${ring(r, 214, 30)}<div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div></div>`).join("")}</div>
-    ${nextBlock("接下来")}</div>`;
-  if (TH.layout === "tubes") return `<div class="pane">${head("额度")}
+    ${nextBlock(LB.next)}</div>`;
+  if (TH.layout === "tubes") return `<div class="pane">${head(LB.title)}
     <div class="cols">${rows.map(r => `<div class="col gauge">${logo(r.key, 40)}
       <div class="n">${r.used}<small>%</small></div>
       <div class="tube"><i class="${r.tone === "hot" ? "hot" : ""}" style="height:${r.used}%"></i><b style="bottom:${r.elapsed}%"></b></div>
       <div class="nm">${r.name}</div><div class="${sbCls(r)}">${r.sub}</div></div>`).join("")}</div>
-    ${nextBlock("下 一 更")}</div>`;
-  return `<div class="pane">${head("AI 额度")}
+    ${nextBlock(LB.next)}</div>`;
+  return `<div class="pane">${head(LB.title)}
     <div class="cards">${rows.map(r => `<div class="card gauge">
       <div class="row1"><span class="chip">${logo(r.key, 32)}</span><div class="who"><div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div></div><div class="n">${r.used}<small>%</small></div></div>
       <div class="cap"><i class="${r.tone === "hot" ? "hot" : ""}" style="width:${Math.max(2, r.used)}%"></i><b style="left:${r.elapsed}%"></b></div></div>`).join("")}</div>
-    ${nextBlock("接下来")}</div>`;
+    ${nextBlock(LB.next)}</div>`;
 }
 
 // ---------- 用量整屏 2240×1080（左 1606 大图 + 右 634 接下来） ----------
@@ -238,13 +295,16 @@ function big() {
       <div class="n">${r.used}<small>%</small></div>
       <div class="cap"><i class="${r.tone === "hot" ? "hot" : ""}" style="width:${Math.max(2, r.used)}%"></i><b style="left:${r.elapsed}%"></b></div>
       <div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div><div class="meta">${r.resetAt} 重置</div></div>`).join("");
-  return `<div class="big">${head(TH.layout === "tubes" ? "额度" : "AI 额度", true)}
+  if (TH.layout === "orbits") return `<div class="big">${head(LB.title, true)}
+    <div class="row">${orbits(680)}<ul class="lg">${rows.map((r, i) => legendRow(r, i, 52)).join("")}</ul></div>
+    <div class="legend">每一道光环是一家，亮的是已经用掉的，白点是这一期的时间走到哪了</div></div>`;
+  return `<div class="big">${head(LB.title, true)}
     <div class="row">${items}</div>
-    <div class="legend">${TH.layout === "tubes" ? "金色是已经用掉的，红线是这一期的时间走到哪了" : "彩色是已经用掉的，白色细线是这一期的时间走到哪了"}</div></div>`;
+    <div class="legend">${THEME === "inkgold" ? "金色是已经用掉的，红线是这一期的时间走到哪了" : "彩色是已经用掉的，白色细线是这一期的时间走到哪了"}</div></div>`;
 }
 function side() {
   const nx = byResetSoon[0];
-  return `<div class="side"><h2>${TH.layout === "tubes" ? "下 一 更" : "接下来"}</h2>
+  return `<div class="side"><h2>${LB.next}</h2>
     <div class="hero">${logo(nx.key, 64)}<span class="nm">${nx.name}</span></div>
     <div class="cnt">${nx.resetIn.replace(/ (小时|分钟|天)$/, "<small>$1后重置</small>")}</div>
     <div class="cap2">重置前还剩 ${nx.left}%</div>
@@ -258,7 +318,7 @@ const fwTime = `<div class="fw fw-time" style="left:96px;top:70px;color:${TH.con
 
 let html;
 if (view === "strip") html = `<div class="z2"><div class="bg" style="background-image:url('${asset("strip")}')"></div><div class="layer">${strip()}</div></div>`;
-else if (view === "usage") html = `<div class="z1"><div class="bg" style="background-image:url('${asset("main")}');filter:brightness(${THEME === "liquid" ? .16 : .26}) saturate(.8)"></div><div class="layer">${big()}</div></div>
+else if (view === "usage") html = `<div class="z1"><div class="bg" style="background-image:url('${asset("main")}');filter:brightness(${(1 - TH.scrim).toFixed(2)}) saturate(.8)"></div><div class="layer">${big()}</div></div>
   <div class="z2"><div class="bg" style="background-image:url('${asset("strip")}')"></div><div class="layer">${side()}</div></div>`;
 else html = `<div class="z1"><div class="bg" style="background-image:url('${asset("main")}')"></div><div class="layer">${fwTime}${fw(104, 830, "CPU", HOST.cpu, "°C")}${fw(420, 830, "GPU", HOST.gpu, "°C")}</div></div>
   <div class="z2"><div class="bg" style="background-image:url('${asset("strip")}')"></div><div class="layer">${strip()}</div></div>`;

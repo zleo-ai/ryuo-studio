@@ -74,7 +74,11 @@ def theme_spec(theme):
         "fonts": meta["native_fonts"],
         "strip": f"themes/{theme}/strip.jpg",
         "logos": {k: {"file": f"logos/{k}.png", "mono": mono} for k, (_f, mono) in LOGOS.items()},
+        "scrim": meta.get("scrim", 0.74),
     }
+    for opt in ("labels", "series"):  # 标题文字、同心光环每圈的颜色，主题没写就用布局默认
+        if opt in meta:
+            spec[opt] = meta[opt]
     return spec
 
 
@@ -251,6 +255,9 @@ def main():
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--stale-minutes", type=int)
     ap.add_argument("--stop", action="store_true", help="停掉屏上的程序")
+    ap.add_argument("--full", action="store_true", help="整屏样子（试的时候立刻显示，停 --show 秒后循环）")
+    ap.add_argument("--show", type=int, default=15)
+    ap.add_argument("--hide", type=int, default=45)
     a = ap.parse_args()
     panel = NativePanel()
     if a.stop:
@@ -258,7 +265,8 @@ def main():
         return
     spec = build_bundle(a.theme)
     panel.ensure()
-    panel.send({"t": "state", "theme": spec, "data": fresh_data(a.stale_minutes)})
+    panel.send({"t": "state", "theme": spec, "data": fresh_data(a.stale_minutes),
+                "mode": {"full": a.full, "show": a.show, "hide": a.hide}})
     say(f"已送数据：{a.theme}")
     if a.once:
         return

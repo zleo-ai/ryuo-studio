@@ -134,8 +134,14 @@ def main():
         if f.exists():  # 开源版不带图标，缺了就只显示文字
             logos[key] = f.read_text().replace('height="1em"', "").replace('width="1em"', "")
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    themes = {}
+    for tj in sorted((ROOT / "themes").glob("*/theme.json")):
+        t = json.loads(tj.read_text())
+        themes[t["id"]] = {"layout": t["layout"], "title": t["colors"]["title"], "content": t["colors"]["content"],
+                           "labels": t.get("labels"), "series": t.get("series"), "scrim": t.get("scrim", 0.74)}
     Path(a.out).write_text("window.SNAP = " + json.dumps(data, ensure_ascii=False, indent=1) + ";\n"
-                           + "window.LOGOS = " + json.dumps(logos, ensure_ascii=False) + ";\n")
+                           + "window.LOGOS = " + json.dumps(logos, ensure_ascii=False) + ";\n"
+                           + "window.THEMES = " + json.dumps(themes, ensure_ascii=False) + ";\n")
     print(json.dumps(data, ensure_ascii=False)[:600])
 
 
