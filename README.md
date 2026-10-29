@@ -13,7 +13,8 @@
 | `themes/` | 主题包。每个包一个目录：`theme.json`（名字、布局、两种可调颜色）、`theme.css`（配色和字体）、`assets/`（整屏、主区、窄条三种尺寸的背景）、`video-prompt.txt`（生成视频用的描述）。 |
 | `render/panel.html` | 额度面板的渲染页：窄条 634×1080、用量整屏 2240×1080、分屏效果图。 |
 | `tools/` | `snapshot.py` 读额度快照、`render.sh` 无头 Chrome 出图、`gen_video.py` 调本机 ComfyUI 里的 MiniMax H3 生成首尾相接的循环视频、`finish_video.sh` 放大并转成屏幕能播的 HEVC、`pusher.py` 常驻推送。 |
-| `app/` | 管理器：`python3 -I app/server.py` 后打开 http://127.0.0.1:7788 ，挑主题、看实时效果、生成视频、改推送设置。 |
+| `app/` | 管理器：挑主题、看实时效果、生成视频、改推送设置、开关推送。 |
+| `desktop/` | 桌面应用：`bash desktop/install.sh` 装好后在应用中心搜「龙屏」，可固定到 Dock。推送和管理器做成登录自启的用户服务（`--no-auto` 则只在点图标时启动），点图标打开独立窗口，不用记端口。 |
 
 ## 额度面板怎么上屏
 

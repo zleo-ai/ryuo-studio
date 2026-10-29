@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#121A24"/><stop offset="1" stop-color="#05080C"/></linearGradient>
+    <linearGradient id="arc" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#7A5CFF"/><stop offset="1" stop-color="#2DE2C8"/></linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="56" fill="url(#bg)"/>
+  <rect x="12.5" y="12.5" width="231" height="231" rx="55.5" fill="none" stroke="#2DE2C8" stroke-opacity=".22"/>
+  <!-- 弯曲的屏幕 -->
+  <path d="M52 84 Q128 66 204 84 L204 172 Q128 190 52 172 Z" fill="#0B1118" stroke="#2DE2C8" stroke-opacity=".55" stroke-width="4" stroke-linejoin="round"/>
+  <!-- 屏上的额度环 -->
+  <circle cx="128" cy="128" r="30" fill="none" stroke="#1C2733" stroke-width="9" stroke-dasharray="141 189" transform="rotate(135 128 128)" stroke-linecap="round"/>
+  <circle cx="128" cy="128" r="30" fill="none" stroke="url(#arc)" stroke-width="9" stroke-dasharray="92 189" transform="rotate(135 128 128)" stroke-linecap="round"/>
+  <line x1="150" y1="104" x2="158" y2="96" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+</svg>

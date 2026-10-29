@@ -55,6 +55,8 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
 <header>
   <h1>龙屏管理器</h1>
   <span class="pill" id="dev"><i></i><span>读取中</span></span>
+  <span class="pill" id="push" title=""><i></i><span>推送读取中</span></span>
+  <button id="pushBtn" type="button" hidden>开推送</button>
   <span class="sp"></span>
   <button id="themeBtn" type="button">跟随系统</button>
   <button class="pri" id="apply" type="button">应用到屏幕</button>
@@ -118,6 +120,12 @@ async function load() {
   $("#dev span").textContent = S.device.connected ? "屏幕已连接" : `屏幕：${S.device.mode}`;
   $("#devNote").textContent = S.device.note;
   $("#apply").textContent = S.device.connected ? "应用到屏幕" : "演练一次上屏";
+  const P = S.pusher || {};
+  $("#push").classList.toggle("on", !!P.running);
+  $("#push span").textContent = P.running ? "推送在跑" : "推送停了";
+  $("#push").title = P.last || "";
+  $("#pushBtn").hidden = false;
+  $("#pushBtn").textContent = P.running ? "重启推送" : "开推送";
   $("#themes").innerHTML = S.themes.map(t => `<div class="tcard${t.id === c.theme ? " on" : ""}" data-id="${t.id}">
     <img src="/repo/themes/${t.id}/assets/full.jpg" alt=""><div class="b"><b>${esc(t.name)}</b><p>${esc(t.summary)}</p><p>${t.videos.length ? t.videos.length + " 段视频" : "还没有视频"}</p></div></div>`).join("");
   const cur = S.themes.find(t => t.id === c.theme);
@@ -158,6 +166,11 @@ $("#refresh").addEventListener("click", preview);
 $("#gen").addEventListener("click", async () => {
   const r = await api("/api/video", {theme: S.conf.theme, seconds: +$("#secs").value});
   if (r.error) alert(r.error); load();
+});
+$("#pushBtn").addEventListener("click", async () => {
+  $("#pushBtn").disabled = true;
+  await api("/api/pusher", {action: S.pusher && S.pusher.running ? "restart" : "start"});
+  $("#pushBtn").disabled = false; load();
 });
 $("#apply").addEventListener("click", async () => { await api("/api/apply", {}); load(); });
 

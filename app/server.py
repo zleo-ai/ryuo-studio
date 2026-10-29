@@ -89,11 +89,29 @@ def device_status(conf):
     if not conf["device_enabled"]:
         return {"connected": False, "mode": "演练", "note": "还没允许连接屏幕；所有上屏操作只演练、不发送。"}
     try:
-        sys.path.insert(0, str(ROOT / "driver"))
-        import ryuo  # noqa: F401
-    except ImportError:
-        return {"connected": False, "mode": "缺驱动", "note": "没找到 driver/ryuo。"}
-    return {"connected": False, "mode": "待接入", "note": "驱动已在，真机连接要等 udev 规则装好后再开。"}
+        r = subprocess.run(["adb", "get-state"], capture_output=True, text=True, timeout=5)
+        ok = r.stdout.strip() == "device"
+    except (OSError, subprocess.TimeoutExpired):
+        ok = False
+    if ok:
+        return {"connected": True, "mode": "已连接", "note": "屏幕已连上；设置保存后几秒内由推送程序换上去。"}
+    return {"connected": False, "mode": "没找到", "note": "电脑没认到屏幕：看看冷头的 USB 线，或者屏是不是还在开机。"}
+
+
+PUSHER = "ryuo-pusher.service"
+
+
+def pusher_status():
+    def ctl(*a):
+        return subprocess.run(["systemctl", "--user", *a, PUSHER], capture_output=True, text=True, timeout=10).stdout.strip()
+    active = ctl("is-active") == "active"
+    last = ""
+    logf = OUT / "pusher.log"
+    if logf.exists():
+        lines = [x for x in logf.read_text(errors="replace").splitlines()[-40:]
+                 if x[:2].isdigit() and "warning" not in x.lower()]
+        last = lines[-1] if lines else ""
+    return {"running": active, "autostart": ctl("is-enabled") == "enabled", "last": last}
 
 
 class H(BaseHTTPRequestHandler):
@@ -138,7 +156,7 @@ class H(BaseHTTPRequestHandler):
         conf = load_conf()
         if p == "/api/state":
             return self.send(200, {"conf": conf, "themes": themes(), "device": device_status(conf),
-                                   "jobs": list(JOBS.values())[-20:], "log": LOG[-50:]})
+                                   "pusher": pusher_status(), "jobs": list(JOBS.values())[-20:], "log": LOG[-50:]})
         if p == "/api/render":
             try:
                 out = render(q.get("theme", conf["theme"]), q.get("view", "strip"), q.get("data", "fresh"))
@@ -175,9 +193,20 @@ class H(BaseHTTPRequestHandler):
                       f'--prompt-file "{prompt}" --seconds {float(b.get("seconds", 10))} --seed {seed} '
                       f'&& bash "{ROOT}/tools/finish_video.sh" "{raw}" "{final}"')
             return self.send(200, {"job": run_job(f"生成「{theme}」视频", ["bash", "-c", script])})
+        if p == "/api/pusher":
+            act = b.get("action")
+            if act not in ("start", "stop", "restart"):
+                return self.send(400, {"error": "只认 start / stop / restart"})
+            subprocess.run(["systemctl", "--user", act, PUSHER], timeout=30)
+            log({"start": "推送已开", "stop": "推送已停（约 10 秒后屏回到待机画面）", "restart": "推送已重启"}[act])
+            return self.send(200, pusher_status())
         if p == "/api/apply":
+            # 推送程序每几秒重读一次配置，开着它就等于已经上屏；没开就顺手开起来
+            st = pusher_status()
+            if conf["device_enabled"] and not st["running"]:
+                subprocess.run(["systemctl", "--user", "start", PUSHER], timeout=30)
             log(f"{'上屏' if conf['device_enabled'] else '演练上屏'}：主题 {conf['theme']}，{'分屏' if conf['layout'] == 'split' else '整屏'}")
-            return self.send(200, {"sent": False, "dry_run": not conf["device_enabled"]})
+            return self.send(200, {"sent": conf["device_enabled"], "dry_run": not conf["device_enabled"]})
         return self.send(404, {"error": "not found"})
 
 
