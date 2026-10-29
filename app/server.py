@@ -159,6 +159,14 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/state":
             return self.send(200, {"conf": conf, "themes": themes(), "device": device_status(conf),
                                    "pusher": pusher_status(), "jobs": list(JOBS.values())[-20:], "log": LOG[-50:]})
+        if p == "/api/screen":  # 真机截图：屏上实际画面，比网页效果图准
+            if not conf["device_enabled"]:
+                return self.send(503, {"error": "还没允许连接屏幕"})
+            try:
+                png = subprocess.run(["adb", "exec-out", "screencap", "-p"], capture_output=True, timeout=10, check=True).stdout
+            except (OSError, subprocess.SubprocessError):
+                return self.send(503, {"error": "截不到屏，看看屏幕连着没有"})
+            return self.send(200, png, "image/png")
         if p == "/api/render":
             try:
                 out = render(q.get("theme", conf["theme"]), q.get("view", "strip"), q.get("data", "fresh"))

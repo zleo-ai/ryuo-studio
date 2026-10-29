@@ -34,6 +34,7 @@ h2 small{font-weight:400;font-size:13px;color:var(--dim)}
 .tcard .b p{font-size:13px;color:var(--dim);margin-top:2px}
 .preview{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:16px;align-items:start}
 .preview img{width:100%;border-radius:10px;background:#000;display:block}
+.preview.live{grid-template-columns:1fr}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{border:0;border-radius:0;padding:7px 14px;background:transparent;color:var(--dim)}
 .seg button[aria-pressed="true"]{background:var(--chip);color:var(--ink);font-weight:600}
@@ -68,9 +69,9 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
   </section>
 
   <section>
-    <h2>现在屏上会是什么样 <small>用的是本机最新的额度数据</small></h2>
+    <h2>现在屏上是什么样 <small>「屏上实况」是真机截图，每 5 秒刷新；另外两个是网页画的效果图，和屏上会有出入</small></h2>
     <div class="row">
-      <div class="seg" id="viewSeg"><button data-v="usage" aria-pressed="true">用量整屏</button><button data-v="preview" aria-pressed="false">分屏效果</button></div>
+      <div class="seg" id="viewSeg"><button data-v="live" aria-pressed="true">屏上实况</button><button data-v="usage" aria-pressed="false">用量整屏效果图</button><button data-v="preview" aria-pressed="false">分屏效果图</button></div>
       <label class="f"><input type="checkbox" id="stale"> 看数据过期时的样子</label>
       <button id="refresh" type="button">重新出图</button>
     </div>
@@ -115,7 +116,7 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
 </main>
 <script>
 const $ = s => document.querySelector(s);
-let S = null, view = "usage";
+let S = null, view = "live";
 const api = (p, b) => fetch(p, b ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)} : {}).then(r => r.json());
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
@@ -170,7 +171,20 @@ async function load() {
   document.querySelectorAll(".slotOpt").forEach(x => x.hidden = hudOn);
   $("#widthOpt").hidden = rend !== "native";
 }
+let liveTimer = null;
+function liveShot() {
+  const img = new Image();
+  img.onload = () => { $("#big").src = img.src; $("#big").style.opacity = 1; };
+  img.onerror = () => { $("#big").style.opacity = .4; };
+  img.src = `/api/screen?t=${Date.now()}`;
+}
 async function preview() {
+  const live = view === "live";
+  $(".preview").classList.toggle("live", live);
+  $("#strip").hidden = live;
+  $("#stale").closest("label").hidden = live;
+  clearInterval(liveTimer);
+  if (live) { liveShot(); liveTimer = setInterval(liveShot, 5000); return; }
   const t = S.conf.theme, d = $("#stale").checked ? "stale" : "fresh";
   $("#big").style.opacity = .4;
   const [a, b] = await Promise.all([api(`/api/render?theme=${t}&view=${view}&data=${d}`), api(`/api/render?theme=${t}&view=strip&data=${d}`)]);
