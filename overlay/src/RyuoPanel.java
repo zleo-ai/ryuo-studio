@@ -421,13 +421,15 @@ public final class RyuoPanel {
                 drawFull();
                 return;
             }
-            if (wide) {
-                hudLeft();
+            if (wide) {  // 左边平面区放主要的（时间、额度、重置），右边弯曲段放电脑占用
+                leftMain();
                 c.save();
                 c.translate(X, 0);
+                rightStats();
+                c.restore();
+                return;
             }
             drawStrip();
-            if (wide) c.restore();
         }
 
         void drawStrip() {
@@ -452,70 +454,112 @@ public final class RyuoPanel {
             c.restore();
         }
 
-        /** 左边平面区：日期、大时钟，下面一排电脑占用。视频亮，所以从左往右垫一层很淡的暗。 */
-        void hudLeft() {
+        /** 左边平面区：左上日期和时钟，右上下一个重置，下面四家额度，最底下一行说明和更新时间。 */
+        void leftMain() {
             p.reset();
-            p.setColor(0xFF000000);
-            p.setShader(new LinearGradient(0, 0, X * .62f, 0, alpha(0xFF000000, .38f), alpha(0xFF000000, 0), Shader.TileMode.CLAMP));
+            p.setColor(alpha(0xFF000000, .24f));
             c.drawRect(0, 0, X, H, p);
-            p.setShader(null);
+            if (d.rows.isEmpty()) return;
             int[] dd = drift();
             c.save();
             c.translate(dd[0], dd[1]);
-            float x0 = 96;
+            float x0 = 84, x1 = X - 84;
             Calendar t = Calendar.getInstance(d.tz);
             t.setTimeInMillis(now);
             String date = String.format("%d月%d日  周%s", t.get(Calendar.MONTH) + 1, t.get(Calendar.DAY_OF_MONTH),
                     "日一二三四五六".charAt(t.get(Calendar.DAY_OF_WEEK) - 1));
-            TextPaint dp = font(th.text, 40, th.dim, .08f);
-            c.drawText(date, x0 + 6, 190, dp);
-            TextPaint cp = font(th.num, 236, th.ink, -.02f);
+            c.drawText(date, x0 + 4, 112, font(th.text, 36, th.dim, .08f));
+            TextPaint cp = font(th.num, 172, th.ink, -.02f);
             String hm = String.format("%02d:%02d", t.get(Calendar.HOUR_OF_DAY), t.get(Calendar.MINUTE));
-            c.drawText(hm, x0, 410, cp);
-            TextPaint sp = font(th.num, 64, th.accent, 0);
-            c.drawText(String.format("%02d", t.get(Calendar.SECOND)), x0 + cp.measureText(hm) + 18, 410, sp);
+            c.drawText(hm, x0 - 4, 276, cp);
+            c.drawText(String.format("%02d", t.get(Calendar.SECOND)), x0 + cp.measureText(hm) + 12, 276, font(th.num, 54, th.accent, 0));
 
+            // 右上：下一个重置
+            Row nx = soon.get(0);
+            String[] in = resetIn(nx);
+            TextPaint lp = font(th.text, 32, th.dim, .06f);
+            TextPaint namep = font(th.name, 40, th.ink, 0);
+            String lead = "下一个重置";
+            float w = namep.measureText(nx.name), lx = x1 - w;
+            c.drawText(nx.name, lx, 112, namep);
+            if (th.logos.containsKey(nx.key)) {
+                logo(nx.key, lx - 30, 98, 40);
+                lx -= 60;
+            }
+            c.drawText(lead, lx - lp.measureText(lead) - 16, 112, lp);
+            TextPaint np = font(th.num, 120, th.ink, -.03f);
+            TextPaint up = font(th.text, 32, th.dim, 0);
+            String unit = in[1] + "后";
+            float uw = up.measureText(unit);
+            c.drawText(unit, x1 - uw, 226, up);
+            c.drawText(in[0], x1 - uw - 12 - np.measureText(in[0]), 226, np);
+            String left = "重置前还剩 " + Math.round(100 - nx.used) + "%";
+            c.drawText(left, x1 - lp.measureText(left), 276, font(th.text, 28, th.dim, 0));
+
+            float bottom = H - 66, legTop = bottom - 30;
+            String legend = "orbits".equals(th.layout) ? "每一道光环是一家，亮的是已经用掉的，白点是这一期的时间走到哪了"
+                    : "彩色是已经用掉的，白色细线是这一期的时间走到哪了";
+            text(legend, x0, legTop, 30, font(th.text, 24, th.dim, 0), 0);
+            String stamp = stale ? "● 数据停在 " + hm(d.generatedAtMs) : "● " + hm(d.generatedAtMs) + " 更新";
+            text(stamp, x1, legTop, 30, font(th.mono, 24, stale ? th.warn : th.dim, 0), 2);
+            bigRows(x0, x1, 330, legTop - 24, 0, 6);
+            c.restore();
+        }
+
+        /** 右边弯曲段：CPU、显卡、内存三张竖排的玻璃卡。读不到就写破折号，不编数。 */
+        void rightStats() {
+            backdrop(.24f);
+            int[] dd = drift();
+            c.save();
+            c.translate(dd[0], dd[1]);
+            float x0 = 42, x1 = W - 42, y = 72;
+            text("电脑", x0, y, 62, font(th.head, 46, th.ink, .08f), 0);
             List<String> items = hudItems;
-            if (!items.isEmpty()) {
-                JSONObject s = sys;
-                boolean fresh = s != null && now - sysAt < 20_000;
-                float y = 560, colW = Math.min(330, (X - x0 - 140) / (float) items.size());
-                p.reset();
-                p.setColor(alpha(th.ink, .18f));
-                c.drawRect(x0 + 4, y - 4, x0 + colW * items.size() - 40, y - 2, p);
-                for (int i = 0; i < items.size(); i++) stat(items.get(i), s, fresh, x0 + 4 + i * colW, y + 64);
+            JSONObject s = sys;
+            boolean fresh = s != null && now - sysAt < 20_000;
+            float top = y + 62 + 34, gap = 24, n = Math.max(1, items.size());
+            float ch = Math.min(260, (H - 80 - top - gap * (n - 1)) / n);
+            for (int i = 0; i < items.size(); i++) {
+                stat(items.get(i), fresh ? s.optJSONObject(items.get(i)) : null, new RectF(x0, top, x1, top + ch));
+                top += ch + gap;
             }
             c.restore();
         }
 
-        /** 一项占用：小标题、大数字、一行小字。读不到就写破折号，不编数。 */
-        void stat(String key, JSONObject s, boolean fresh, float x, float y) {
-            String label, big = "—", unit = "", sub = "";
-            int color = th.ink;
-            JSONObject o = fresh ? s.optJSONObject(key) : null;
-            switch (key) {
-                case "cpu": label = "CPU"; break;
-                case "gpu": label = "显卡"; break;
-                default: label = "内存";
-            }
+        void stat(String key, JSONObject o, RectF r) {
+            String label = key.equals("cpu") ? "CPU" : key.equals("gpu") ? "显卡" : "内存";
+            String big = "—", unit = "", sub = "";
+            int bar = -1, color = th.ink;
             if (o != null) {
                 if (key.equals("mem")) {
                     int pct = o.optInt("pct", -1);
-                    if (pct >= 0) { big = String.valueOf(pct); unit = "%"; }
+                    if (pct >= 0) { big = String.valueOf(pct); unit = "%"; bar = pct; }
                     sub = String.format("%.0f / %.0f GB", o.optDouble("usedGb", 0), o.optDouble("totalGb", 0));
                     if (pct >= 90) color = th.hot;
                 } else {
                     int temp = o.optInt("temp", -1), load = o.optInt("load", -1);
                     if (temp >= 0) { big = String.valueOf(temp); unit = "°C"; }
-                    if (load >= 0) sub = "占用 " + load + "%";
+                    if (load >= 0) { sub = "占用 " + load + "%"; bar = load; }
                     if (temp >= 85) color = th.hot;
                 }
             }
-            c.drawText(label, x, y, font(th.text, 34, th.dim, .1f));
-            TextPaint bp = font(th.num, 118, color, -.01f);
-            c.drawText(big, x - 4, y + 132, bp);
-            if (!unit.isEmpty()) c.drawText(unit, x - 4 + bp.measureText(big) + 8, y + 132, font(th.num, 42, th.dim, 0));
-            if (!sub.isEmpty()) c.drawText(sub, x, y + 190, font(th.mono, 30, th.dim, 0));
+            glass(r, 28, .07f, .02f, .09f);
+            float px = r.left + 30, pr = r.right - 30;
+            text(label, px, r.top + 26, 40, font(th.text, 32, th.dim, .1f), 0);
+            if (!sub.isEmpty()) text(sub, pr, r.top + 28, 40, font(th.mono, 26, th.dim, 0), 2);
+            TextPaint bp = font(th.num, 112, color, -.01f);
+            float base = r.top + 26 + 40 + 112;
+            c.drawText(big, px - 4, base, bp);
+            if (!unit.isEmpty()) c.drawText(unit, px + bp.measureText(big) + 6, base, font(th.num, 40, th.dim, 0));
+            if (bar >= 0) {
+                float by = r.bottom - 34;
+                p.reset();
+                p.setAntiAlias(true);
+                p.setColor(alpha(th.ink, .12f));
+                c.drawRoundRect(new RectF(px, by, pr, by + 8), 4, 4, p);
+                p.setColor(bar >= 90 ? th.hot : th.accent);
+                c.drawRoundRect(new RectF(px, by, px + (pr - px) * Math.min(100, bar) / 100f, by + 8), 4, 4, p);
+            }
         }
 
         int[] drift() {
@@ -557,7 +601,12 @@ public final class RyuoPanel {
                     : "彩色是已经用掉的，白色细线是这一期的时间走到哪了";
             float legTop = bottom - 30;
             text(legend, x0, legTop, 30, font(th.text, 24, th.dim, 0), 0);
-            float rowTop = y + 30, rowBottom = legTop - 24;
+            bigRows(x0, x1, y + 30, legTop - 24, 60, 40);
+        }
+
+        /** 四家大仪表排一行；cardPad 是玻璃卡上下各收进去多少。 */
+        void bigRows(float x0, float x1, float rowTop, float rowBottom, float cardTop, float cardBottom) {
+            boolean tubes = "tubes".equals(th.layout);
             if ("orbits".equals(th.layout)) {
                 bigOrbits(x0, x1, rowTop, rowBottom);
                 return;
@@ -568,7 +617,7 @@ public final class RyuoPanel {
                 Row r = d.rows.get(i);
                 float cx = x0 + i * (colW + 30) + colW / 2;
                 if (tubes) bigTube(r, cx, colW, rowTop, rowBottom);
-                else if ("cards".equals(th.layout)) bigCard(r, cx, colW, rowTop + 60, rowBottom - 40);
+                else if ("cards".equals(th.layout)) bigCard(r, cx, colW, rowTop + cardTop, rowBottom - cardBottom);
                 else bigRing(r, cx, rowTop, rowBottom);
             }
         }
