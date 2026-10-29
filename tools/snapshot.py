@@ -4,6 +4,7 @@
 用法：
   python3 -I make_data.py                      # 读真实快照，按现在时间算
   python3 -I make_data.py --stale-minutes 47   # 假装快照已经 47 分钟没更新（画「过期」样子用）
+  python3 -I make_data.py --json out.json      # 顺带写一份纯 JSON
 """
 import argparse
 import calendar
@@ -79,6 +80,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stale-minutes", type=int, default=None)
     ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--json", help="另外把数据写成纯 JSON（屏上原生面板用）")
     a = ap.parse_args()
 
     snap = json.loads(SNAPSHOT.read_text())
@@ -104,7 +106,7 @@ def main():
             "used": round(used), "usedExact": used,
             "elapsed": round(elapsed, 1),
             "left": round(100 - used),
-            "resetAt": fmt_reset(reset, now), "resetIn": fmt_left(reset - now), "resetMs": reset,
+            "resetAt": fmt_reset(reset, now), "resetIn": fmt_left(reset - now), "resetMs": reset, "startMs": start,
             "pace": word, "tone": tone,
         }
         if second and second[0] in wins:
@@ -114,6 +116,7 @@ def main():
     age_min = (now - gen) / 60000
     nxt = min((r for r in rows if not r.get("missing")), key=lambda r: r["resetMs"])
     data = {
+        "generatedAtMs": gen,
         "generatedAt": time.strftime("%H:%M", time.localtime(gen / 1000)),
         "generatedDate": time.strftime("%m-%d", time.localtime(gen / 1000)),
         "now": time.strftime("%H:%M", time.localtime(now / 1000)),
@@ -122,6 +125,9 @@ def main():
         "next": {"name": nxt["name"], "resetIn": nxt["resetIn"], "left": nxt["left"]},
         "rows": rows,
     }
+    if a.json:
+        Path(a.json).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.json).write_text(json.dumps(data, ensure_ascii=False))
     logos = {}
     for key, fname in LOGO.items():
         f = LOGO_DIR / fname

@@ -3,7 +3,30 @@
   "name": "星舰舱",
   "summary": "深空、光环、青色细线仪表，像飞船驾驶舱里的一块副屏。",
   "layout": "rings",
-  "colors": {"title": "#2DE2C8", "content": "#E6EEF6"},
-  "assets": {"full": "assets/full.jpg", "main": "assets/main.jpg", "strip": "assets/strip.jpg", "reference": "assets/ref-wide.png"},
-  "videos": []
+  "colors": {
+    "title": "#2DE2C8",
+    "content": "#E6EEF6"
+  },
+  "assets": {
+    "full": "assets/full.jpg",
+    "main": "assets/main.jpg",
+    "strip": "assets/strip.jpg",
+    "reference": "assets/ref-wide.png"
+  },
+  "videos": [],
+  "native_fonts": {
+    "head": {
+      "file": "fonts/SmileySans-Oblique.ttf"
+    },
+    "num": {
+      "file": "fonts/SpaceGrotesk-500.ttf"
+    },
+    "name": {
+      "file": "fonts/SpaceGrotesk-700.ttf"
+    },
+    "text": null,
+    "mono": {
+      "file": "fonts/GeistMono-500.ttf"
+    }
+  }
 }

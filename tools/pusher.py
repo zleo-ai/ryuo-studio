@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""做法甲的常驻推送：主机画好用量图，按时推上屏，同时每秒给屏发心跳。
+"""常驻推送：每秒给屏发心跳，同时把额度面板送上屏。
+
+面板有两种送法（config 里的 renderer）：
+  native（默认，只用于分屏）：屏上跑一个原生绘制的常驻程序（tools/native_panel.py），
+      电脑每分钟送一次数据、每 5 秒保活，倒计时在屏上按秒走；换主题或布局时才重发一次 config。
+      屏上程序起不来时，窄条上还有一张同主题的静态图兜底。
+  png：主机画好图，按 push_minutes 推上屏（做法甲）。整屏布局总是走这种。
 
   python3 -I tools/pusher.py            # 读 ~/.config/ryuo-studio/config.json
   python3 -I tools/pusher.py --once     # 只推一轮就退出（调试用）
@@ -21,13 +27,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "driver"))
+sys.path.insert(0, str(ROOT / "tools"))
 from ryuo.device import RyuoDevice  # noqa: E402
 from ryuo.transport import FakeTransport  # noqa: E402
 
 CONF = Path.home() / ".config" / "ryuo-studio" / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 SCREEN_DIR = "/sdcard/pcMedia/"
-DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False}
+DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False, "renderer": "native"}
+NATIVE_TICK_S, NATIVE_DATA_S = 5, 60
 
 
 def say(msg):
@@ -151,19 +159,52 @@ def main():
     a = ap.parse_args()
     c = conf()
     scr = Screen(live=bool(c["device_enabled"]))
+    native = None
+    if scr.live:
+        import native_panel
+        native = native_panel.NativePanel()
     say("开始推送" + ("" if scr.live else "（演练模式：不连屏幕）"))
     pushed, turn, last = set(), 0, {}
+    applied, data_at = None, 0.0
     with scr.dev.heartbeat(telemetry):
         while True:
             c = conf()
+            use_native = native is not None and c["renderer"] == "native" and c["layout"] == "split"
+            key = (c["theme"], c["layout"], use_native)
+            wait = max(1, int(c["push_minutes"])) * 60
             try:
-                push_round(scr, c, turn, pushed, last)
+                if use_native:
+                    wait = NATIVE_TICK_S
+                    if key != applied:  # 换了主题或布局：重发一次 config，窄条先放静态图兜底
+                        push_round(scr, c, turn, pushed, last)
+                        turn += 1
+                        applied = key
+                        native_panel.build_bundle(c["theme"])
+                        native.close()  # 下面重连时顺带把新主题的文件同步上去
+                        data_at = 0
+                    fresh = native.ensure()
+                    if fresh or time.time() - data_at >= NATIVE_DATA_S:
+                        native.send({"t": "state", "theme": native_panel.theme_spec(c["theme"]), "data": native_panel.fresh_data()})
+                        if fresh or data_at == 0:
+                            say(f"原生面板已连上：{c['theme']}")
+                        data_at = time.time()
+                    else:
+                        native.send({"t": "ping"})
+                else:
+                    if native is not None and native.sock is not None:
+                        native.send({"t": "hide"})
+                        native.close()
+                    push_round(scr, c, turn, pushed, last)
+                    turn += 1
+                    applied = key
             except (subprocess.SubprocessError, OSError, ValueError) as e:
-                say(f"这一轮没推成：{e}；下一轮再试")
-            turn += 1
+                say(f"这一轮没推成：{e}；稍后再试")
+                if native is not None:
+                    native.close()
+                wait = min(wait, 30)
             if a.once:
                 break
-            time.sleep(max(1, int(c["push_minutes"])) * 60)
+            time.sleep(wait)
     scr.dev.close()
 
 

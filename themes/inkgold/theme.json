@@ -3,7 +3,37 @@
   "name": "墨夜流金",
   "summary": "夜色水墨山水、金色细线、朱砂刻度，用量做成四支漏刻。",
   "layout": "tubes",
-  "colors": {"title": "#C9A45C", "content": "#EFE7D4"},
-  "assets": {"full": "assets/full.jpg", "main": "assets/main.jpg", "strip": "assets/strip.jpg", "reference": "assets/ref-wide.png"},
-  "videos": []
+  "colors": {
+    "title": "#C9A45C",
+    "content": "#EFE7D4"
+  },
+  "assets": {
+    "full": "assets/full.jpg",
+    "main": "assets/main.jpg",
+    "strip": "assets/strip.jpg",
+    "reference": "assets/ref-wide.png"
+  },
+  "videos": [],
+  "native_fonts": {
+    "head": {
+      "file": "fonts/NotoSerifCJK-Medium.ttc",
+      "ttc": 2
+    },
+    "num": {
+      "file": "fonts/Cormorant-600.ttf",
+      "fallback": "serif"
+    },
+    "name": {
+      "file": "fonts/Cormorant-600.ttf",
+      "fallback": "serif"
+    },
+    "text": {
+      "file": "fonts/NotoSerifCJK-Regular.ttc",
+      "ttc": 2
+    },
+    "mono": {
+      "file": "fonts/Cormorant-600.ttf",
+      "fallback": "serif"
+    }
+  }
 }
