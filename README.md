@@ -60,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File desktop\install_windows.ps1
 和 Linux 不一样的地方：
 
 - 连屏幕走 hidapi，不走 hidraw，也不用装 udev 规则。要是华硕的 Armoury Crate 或 InfoHub 开着，它们可能会占着屏幕的连接，先关掉。
-- 屏上的时区用「GMT+08:00」这种偏移写法：Windows 拿不到 IANA 时区名，有夏令时的地方切换当天可能差一小时，重启推送就好了。
+- 屏上的时区用「GMT+08:00」这种偏移写法：Windows 拿不到 IANA 时区名，有夏令时的地方，切换后最多一分钟屏上时间就跟着改过来（每次送数据都重算偏移）。
 - 想自己编屏上程序的话，用 `python overlay\build.py`（Linux 上 `overlay/build.sh` 也还能用）。
 
 ## 加一个主题
