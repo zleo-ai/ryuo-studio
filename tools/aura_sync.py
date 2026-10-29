@@ -56,7 +56,7 @@ def say(msg):
 
 
 CHECKS = {
-    "theme": (str, lambda v: re.fullmatch(r"[A-Za-z0-9_-]+", v)),
+    "theme": (None, lambda v: isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_-]+", v)),
     "lights_enabled": (None, lambda v: isinstance(v, bool)),
     "lights_effect": (str, lambda v: v in EFFECTS),
     "lights_brightness": (int, lambda v: type(v) is int and 0 <= v <= 100),
@@ -77,7 +77,7 @@ def clean(raw, prev):
         try:
             v = conv(raw[key]) if conv and not isinstance(raw[key], bool) else raw[key]
             out[key] = v if ok(v) else prev[key]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):  # json 认 Infinity、1e400，int() 会溢出
             out[key] = prev[key]
     return out
 
@@ -219,7 +219,8 @@ class Lights:
         for d in self.cli.controllers():
             if d.kind not in want:
                 continue
-            direct = d.mode_index("direct", "custom")
+            direct = d.mode_index("direct")  # 和 OpenRGB 的 SetCustomMode 同样先挑 Direct 再挑 Custom
+            direct = d.mode_index("custom") if direct is None else direct
             used = [i for i in (direct, d.mode_index("off")) if i is not None]
             if direct is None or any(d.modes[i].flags & AUTO_SAVE for i in used):
                 say(f"跳过 {d.name}：" + ("没有实时推色模式" if direct is None else "切模式会写进设备存储"))

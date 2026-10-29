@@ -216,6 +216,10 @@ def test_bad_config_values_keep_previous():
     for k in ("theme", "lights_brightness", "lights_effect", "lights_argb_leds", "lights_devices", "lights_enabled"):
         assert got[k] == prev[k], k
     assert aura_sync.clean([1, 2], prev) == prev
+    for raw in ('{"lights_brightness": Infinity}', '{"lights_argb_leds": 1e400}', '{"theme": null}'):
+        bad = json.loads(raw)
+        key = next(iter(bad))
+        assert aura_sync.clean(bad, prev)[key] == prev[key], raw
     assert aura_sync.clean({"lights_brightness": "55"}, prev)["lights_brightness"] == 55
     assert aura_sync.clean({}, prev)["lights_brightness"] == aura_sync.DEFAULTS["lights_brightness"]
 
