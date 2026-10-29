@@ -57,7 +57,10 @@ import java.util.TimeZone;
 public final class RyuoPanel {
     static final String DIR = "/data/local/tmp/ryuo";
     static final String SOCKET = "ryuo-panel";
-    static final int W = 634, H = 1080, X = 1606, FULL_W = 2240;
+    static final int H = 1080, FULL_W = 2240;
+    // 窄条宽度由电脑送来；玻璃模式下底下是整屏视频，面板半透明叠在上面
+    static volatile int W = 634, X = 1606;
+    static volatile boolean glassMode;
     static final long SILENT_HIDE_MS = 20_000, STALE_AFTER_MS = 30 * 60_000, ANIM_MS = 900;
 
     static volatile Theme theme;
@@ -126,6 +129,10 @@ public final class RyuoPanel {
                     full = md.optBoolean("full", false);
                     showMs = md.optLong("show", 15) * 1000;
                     hideMs = md.optLong("hide", 45) * 1000;
+                    int w = Math.max(560, Math.min(1120, md.optInt("width", 634)));
+                    W = w;
+                    X = FULL_W - w;
+                    glassMode = md.optBoolean("glass", false);
                 }
                 hideReq = false;
                 break;
@@ -148,12 +155,13 @@ public final class RyuoPanel {
     SurfaceControl sc;
     Surface surface;
     boolean layerFull, visible;
+    int layerW;
     float alpha = -1;
     final SurfaceControl.Transaction t = new SurfaceControl.Transaction();
 
     /** 分屏只盖右边窄条，整屏盖满；切换时换一个尺寸合适的新图层。 */
     void layer(boolean wantFull) throws Exception {
-        if (sc != null && layerFull == wantFull) return;
+        if (sc != null && layerFull == wantFull && (wantFull || layerW == W)) return;
         if (sc != null) {
             t.reparent(sc, null).apply();
             surface.release();
@@ -165,6 +173,7 @@ public final class RyuoPanel {
         t.setLayer(sc, Integer.MAX_VALUE).setPosition(sc, wantFull ? 0 : X, 0).setVisibility(sc, false).apply();
         surface = new Surface(sc);
         layerFull = wantFull;
+        layerW = W;
         visible = false;
         alpha = -1;
     }
@@ -394,7 +403,9 @@ public final class RyuoPanel {
                 drawFull();
                 return;
             }
-            if (th.strip != null) {
+            if (glassMode) {
+                backdrop(0);
+            } else if (th.strip != null) {
                 c.drawBitmap(th.strip, null, new Rect(0, 0, W, H), new Paint(Paint.FILTER_BITMAP_FLAG));
             } else {
                 c.drawColor(0xFF05080D);
@@ -421,9 +432,15 @@ public final class RyuoPanel {
         /** 整屏：左边 1606 压暗底下的视频，画四家大仪表；右边 634 放窄条背景和「接下来」。 */
         void drawFull() {
             p.reset();
-            p.setColor(Color.argb(Math.round(th.scrim * 255), 0, 0, 0));
+            float sc = glassMode ? Math.min(th.scrim, .5f) : th.scrim;
+            p.setColor(Color.argb(Math.round(sc * 255), 0, 0, 0));
             c.drawRect(0, 0, X, H, p);
-            if (th.strip != null) c.drawBitmap(th.strip, null, new Rect(X, 0, FULL_W, H), new Paint(Paint.FILTER_BITMAP_FLAG));
+            if (glassMode) {
+                c.save();
+                c.translate(X, 0);
+                backdrop(sc);
+                c.restore();
+            } else if (th.strip != null) c.drawBitmap(th.strip, null, new Rect(X, 0, FULL_W, H), new Paint(Paint.FILTER_BITMAP_FLAG));
             if (d.rows.isEmpty()) return;
             int[] dd = drift();
             c.save();
@@ -627,6 +644,7 @@ public final class RyuoPanel {
             tp.setColor(color);
             tp.setLetterSpacing(spacingEm);
             tp.setFontFeatureSettings("'tnum','lnum'");
+            if (glassMode) tp.setShadowLayer(10, 0, 2, 0x8C000000); // 视频亮的地方字也看得清
             return tp;
         }
 
@@ -1100,7 +1118,27 @@ public final class RyuoPanel {
             p.setStyle(Paint.Style.FILL);
         }
 
+        /** 玻璃底：左缘透明，往右渐暗，视频透得过来；左边一道细高光当分隔。from 是左侧已有的压暗程度。 */
+        void backdrop(float from) {
+            p.reset();
+            p.setColor(0xFF000000);
+            p.setShader(new LinearGradient(0, 0, 150, 0, alpha(0xFF000000, from), alpha(0xFF000000, Math.max(from, .34f)), Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, W, H, p);
+            p.setShader(new LinearGradient(0, 0, 0, H, alpha(0xFFFFFFFF, 0), alpha(0xFFFFFFFF, .22f), Shader.TileMode.MIRROR));
+            c.drawRect(0, 0, 1.5f, H, p);
+            p.setShader(null);
+        }
+
         void glass(RectF r, float radius, float a0, float a1, float stroke) {
+            if (glassMode) {  // 透明玻璃：一层薄暗底托住字，白色渐变当反光，上沿亮、下沿暗的描边当厚度
+                p.reset();
+                p.setAntiAlias(true);
+                p.setColor(alpha(0xFF000000, .16f));
+                c.drawRoundRect(r, radius, radius, p);
+                a0 += .05f;
+                a1 += .02f;
+                stroke += .12f;
+            }
             p.reset();
             p.setAntiAlias(true);
             p.setShader(new LinearGradient(r.left, r.top, r.left + r.width() * .34f, r.bottom,
@@ -1110,7 +1148,12 @@ public final class RyuoPanel {
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeWidth(1);
             p.setColor(alpha(0xFFFFFFFF, stroke));
+            if (glassMode) {
+                p.setColor(0xFF000000);
+                p.setShader(new LinearGradient(0, r.top, 0, r.bottom, alpha(0xFFFFFFFF, stroke + .1f), alpha(0xFFFFFFFF, stroke * .25f), Shader.TileMode.CLAMP));
+            }
             c.drawRoundRect(new RectF(r.left + .5f, r.top + .5f, r.right - .5f, r.bottom - .5f), radius, radius, p);
+            p.setShader(null);
             p.setStyle(Paint.Style.FILL);
         }
     }

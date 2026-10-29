@@ -36,7 +36,7 @@ CONF = Path.home() / ".config" / "ryuo-studio" / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 SCREEN_DIR = "/sdcard/pcMedia/"
 DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False, "renderer": "native",
-            "full_show_seconds": 15, "full_hide_seconds": 45}
+            "full_show_seconds": 15, "full_hide_seconds": 45, "panel_width": 800, "panel_glass": True}
 NATIVE_TICK_S, NATIVE_DATA_S = 5, 60
 
 
@@ -124,8 +124,12 @@ class Screen:
 
 
 def push_round(scr, c, turn, pushed_videos, last, native=False):
-    """native=True 且整屏时只放视频（面板由屏上程序叠上去），不用出图。"""
+    """native=True 且整屏时只放视频（面板由屏上程序叠上去），不用出图。
+    原生分屏开了玻璃：屏幕按整屏放视频，窄条由屏上程序半透明叠在右边，宽度随意。"""
     theme, layout = c["theme"], c["layout"]
+    glass = native and layout == "split" and c.get("panel_glass")
+    if glass:
+        layout = "full"
     video_only = native and layout != "split"
     name = None
     if not video_only:
@@ -147,6 +151,8 @@ def push_round(scr, c, turn, pushed_videos, last, native=False):
         dev.set_slots(["Date&Time", "CPU Temperature"])
     elif video_only:
         dev.set_media([video.name] if video else [], play_mode="Single")
+        if glass:  # 第三个读数会被右边的面板盖住
+            dev.set_slots(["Date&Time", "CPU Temperature"])
     else:  # 整屏：视频和用量大图轮流放
         dev.set_media(([video.name] if video else []) + [name], play_mode="Cycle" if video else "Single")
         dev.set_slots(["Date&Time", "CPU Temperature", "GPU Temperature"])
@@ -177,7 +183,7 @@ def main():
         while True:
             c = conf()
             use_native = native is not None and c["renderer"] == "native"
-            key = (c["theme"], c["layout"], use_native)
+            key = (c["theme"], c["layout"], use_native, bool(c["panel_glass"]))
             wait = max(1, int(c["push_minutes"])) * 60
             try:
                 if use_native:
@@ -190,7 +196,8 @@ def main():
                         native.close()  # 下面重连时顺带把新主题的文件同步上去
                         data_at = 0
                     fresh = native.ensure()
-                    mode = {"full": c["layout"] != "split", "show": c["full_show_seconds"], "hide": c["full_hide_seconds"]}
+                    mode = {"full": c["layout"] != "split", "show": c["full_show_seconds"], "hide": c["full_hide_seconds"],
+                            "width": int(c["panel_width"]) if c["panel_glass"] else 634, "glass": bool(c["panel_glass"])}
                     if mode != sent_mode:  # 只改了浮出节奏：马上送，不用重发 config
                         data_at = 0
                     if fresh or time.time() - data_at >= NATIVE_DATA_S:
