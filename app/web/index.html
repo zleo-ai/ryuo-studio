@@ -96,7 +96,7 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
     </div>
     <div class="row">
       <div class="seg" id="glassSeg"><button data-v="1">透明玻璃（视频铺满，面板叠上去）</button><button data-v="0">实底窄条</button></div>
-      <label class="f" id="widthOpt">面板宽 <select id="pw"><option value="634">634（原窄条）</option><option value="720">720</option><option value="800">800</option><option value="880">880</option><option value="960">960</option></select> 像素</label>
+      <label class="f" id="widthOpt">面板宽 <select id="pw"><option value="560">560</option><option value="634">634（正好是弯曲那段）</option><option value="720">720</option><option value="800">800</option></select> 像素</label>
       <label class="f" id="fullOpt">整屏时用量每 <select id="hide"><option value="30">30 秒</option><option value="45" selected>45 秒</option><option value="90">90 秒</option><option value="180">3 分钟</option></select>
         浮出一次，停 <select id="show"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select></label>
       <label class="f" id="minsOpt">图片每 <select id="mins"><option>5</option><option>10</option><option selected>15</option><option>30</option></select> 分钟刷新一次</label>
@@ -145,7 +145,7 @@ async function load() {
   $("#minsOpt").hidden = rend === "native";
   const glass = c.panel_glass !== false;
   document.querySelectorAll("#glassSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === (glass ? "1" : "0")));
-  $("#pw").value = String(c.panel_width || 800);
+  $("#pw").value = String(c.panel_width || 634);
   $("#glassSeg").hidden = rend !== "native";
   $("#widthOpt").hidden = rend !== "native";
 }

@@ -36,7 +36,7 @@ CONF = Path.home() / ".config" / "ryuo-studio" / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 SCREEN_DIR = "/sdcard/pcMedia/"
 DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False, "renderer": "native",
-            "full_show_seconds": 15, "full_hide_seconds": 45, "panel_width": 800, "panel_glass": True}
+            "full_show_seconds": 15, "full_hide_seconds": 45, "panel_width": 634, "panel_glass": True}
 NATIVE_TICK_S, NATIVE_DATA_S = 5, 60
 
 

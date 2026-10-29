@@ -23,7 +23,7 @@ CONF = CONF_DIR / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 DEFAULT_CONF = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False,
                 "renderer": "native", "full_show_seconds": 15, "full_hide_seconds": 45,
-                "panel_width": 800, "panel_glass": True}
+                "panel_width": 634, "panel_glass": True}
 PORT = 7788
 
 JOBS = {}
