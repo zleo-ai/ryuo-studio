@@ -151,8 +151,9 @@ def push_round(scr, c, turn, pushed_videos, last, native=False):
         dev.set_slots(["Date&Time", "CPU Temperature"])
     elif video_only:
         dev.set_media([video.name] if video else [], play_mode="Single")
-        if glass:  # 第三个读数会被右边的面板盖住
-            dev.set_slots(["Date&Time", "CPU Temperature"])
+        # 屏幕自带的时间、温度：6 个固定位置，数组下标就是位置，空串是空位。
+        # 整屏默认全空（会和浮出的面板叠在一起）；玻璃分屏默认左边两项（第三项会被面板盖住）
+        dev.set_slots(c.get("split_slots", ["Date&Time", "CPU Temperature"]) if glass else c.get("full_slots", []))
     else:  # 整屏：视频和用量大图轮流放
         dev.set_media(([video.name] if video else []) + [name], play_mode="Cycle" if video else "Single")
         dev.set_slots(["Date&Time", "CPU Temperature", "GPU Temperature"])
@@ -183,7 +184,8 @@ def main():
         while True:
             c = conf()
             use_native = native is not None and c["renderer"] == "native"
-            key = (c["theme"], c["layout"], use_native, bool(c["panel_glass"]))
+            key = (c["theme"], c["layout"], use_native, bool(c["panel_glass"]),
+                   json.dumps([c.get("split_slots"), c.get("full_slots")]))
             wait = max(1, int(c["push_minutes"])) * 60
             try:
                 if use_native:

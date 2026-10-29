@@ -97,6 +97,8 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
     <div class="row">
       <div class="seg" id="glassSeg"><button data-v="1">透明玻璃（视频铺满，面板叠上去）</button><button data-v="0">实底窄条</button></div>
       <label class="f" id="widthOpt">面板宽 <select id="pw"><option value="560">560</option><option value="634">634（正好是弯曲那段）</option><option value="720">720</option><option value="800">800</option></select> 像素</label>
+      <label class="f">时间放在 <select id="slotTime"></select></label>
+      <label class="f">CPU 温度放在 <select id="slotCpu"></select></label>
       <label class="f" id="fullOpt">整屏时用量每 <select id="hide"><option value="30">30 秒</option><option value="45" selected>45 秒</option><option value="90">90 秒</option><option value="180">3 分钟</option></select>
         浮出一次，停 <select id="show"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select></label>
       <label class="f" id="minsOpt">图片每 <select id="mins"><option>5</option><option>10</option><option selected>15</option><option>30</option></select> 分钟刷新一次</label>
@@ -146,6 +148,15 @@ async function load() {
   const glass = c.panel_glass !== false;
   document.querySelectorAll("#glassSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === (glass ? "1" : "0")));
   $("#pw").value = String(c.panel_width || 634);
+  // 屏幕自带的读数只有 6 个固定位置：数组下标就是位置
+  const POS = [["", "不显示"], ["0", "左上"], ["1", "左下"], ["2", "右上"], ["3", "右中"], ["4", "右下"], ["5", "正中（小）"]];
+  const slots = c.layout === "full" ? (c.full_slots || []) : (c.split_slots || ["Date&Time", "CPU Temperature"]);
+  for (const [id, item] of [["#slotTime", "Date&Time"], ["#slotCpu", "CPU Temperature"]]) {
+    const sel = $(id);
+    if (!sel.options.length) sel.innerHTML = POS.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+    const i = slots.indexOf(item);
+    sel.value = i < 0 ? "" : String(i);
+  }
   $("#glassSeg").hidden = rend !== "native";
   $("#widthOpt").hidden = rend !== "native";
 }
@@ -167,6 +178,17 @@ $("#layoutSeg").addEventListener("click", async e => { const b = e.target.closes
 $("#mins").addEventListener("change", async () => { await api("/api/conf", {push_minutes: +$("#mins").value}); load(); });
 $("#rendSeg").addEventListener("click", async e => { const b = e.target.closest("button"); if (b) { await api("/api/conf", {renderer: b.dataset.v}); load(); } });
 $("#glassSeg").addEventListener("click", async e => { const b = e.target.closest("button"); if (b) { await api("/api/conf", {panel_glass: b.dataset.v === "1"}); load(); } });
+async function saveSlots(changed) {
+  const t = $("#slotTime").value, cpu = $("#slotCpu").value;
+  if (t !== "" && t === cpu) (changed === "#slotTime" ? $("#slotCpu") : $("#slotTime")).value = "";  // 同一个位置只能放一项
+  const arr = ["", "", "", "", "", ""];
+  if ($("#slotTime").value !== "") arr[+$("#slotTime").value] = "Date&Time";
+  if ($("#slotCpu").value !== "") arr[+$("#slotCpu").value] = "CPU Temperature";
+  while (arr.length && arr[arr.length - 1] === "") arr.pop();
+  await api("/api/conf", {[S.conf.layout === "full" ? "full_slots" : "split_slots"]: arr}); load();
+}
+$("#slotTime").addEventListener("change", () => saveSlots("#slotTime"));
+$("#slotCpu").addEventListener("change", () => saveSlots("#slotCpu"));
 $("#pw").addEventListener("change", async () => { await api("/api/conf", {panel_width: +$("#pw").value}); load(); });
 $("#hide").addEventListener("change", async () => { await api("/api/conf", {full_hide_seconds: +$("#hide").value}); load(); });
 $("#show").addEventListener("change", async () => { await api("/api/conf", {full_show_seconds: +$("#show").value}); load(); });

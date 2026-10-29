@@ -25,6 +25,7 @@ DEFAULT_CONF = {"theme": "starship", "layout": "split", "push_minutes": 15, "dev
                 "renderer": "native", "full_show_seconds": 15, "full_hide_seconds": 45,
                 "panel_width": 634, "panel_glass": True}
 PORT = 7788
+SLOT_CHOICES = {"", "Date&Time", "CPU Temperature", "GPU Temperature"}
 
 JOBS = {}
 LOG = []
@@ -175,6 +176,10 @@ class H(BaseHTTPRequestHandler):
                       "panel_width", "panel_glass"):
                 if k in b:
                     conf[k] = b[k]
+            for k in ("split_slots", "full_slots"):  # 屏幕自带读数：6 个固定位置，下标即位置
+                v = b.get(k)
+                if isinstance(v, list) and len(v) <= 6 and all(x in SLOT_CHOICES for x in v):
+                    conf[k] = v
             save_conf(conf)
             how = "实时" if conf.get("renderer", "native") == "native" else f"每 {conf['push_minutes']} 分钟推一次图"
             log(f"设置已保存：主题 {conf['theme']} · {'分屏' if conf['layout'] == 'split' else '整屏'} · {how}")
