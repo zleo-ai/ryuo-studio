@@ -160,3 +160,16 @@ ScreenConfig（全屏）：
 ## 13. 驱动禁止发送的资源
 
 `upgrade`（触发固件更新）、`transport` / `transported`（上传桩，带 `firmware` 类型会触发本地更新检查）、`turboPump`（板上没有对应驱动）、`rotate`（写持久属性但不转屏）、`power`（调暗后恢复方法不明）。`Request` 构造时直接抛错。
+
+## 1.0.7 实机验证（2026-10-29，ROG 本机这块屏，固件 V1.0.7 / 硬件 V1.1）
+
+| 项目 | 结果 |
+|---|---|
+| `POST conn` 回复 | 格式与文档一致：`version.firmware` = `V1.0.7`，`version.hardware` = `V1.1`，`media.preset` / `media.custom` 两个列表；驱动据此自动选 1.0.7 档 |
+| 全屏 2240×1080 HEVC（`hvc1`） | 能播，无需降到 1920 宽 H.264 |
+| 分屏尺寸 | 左 1606、右 634 |
+| 分屏读数位 | 第三个读数会画到右区上（压住右区内容），分屏时只用前两个 |
+| 时区 | `timeZone` 不传或传 UTC 时按世界标准时间显示；传 `Asia/Shanghai` 正常 |
+| 同名换图 | 不刷新。原名覆盖 + `preset` 不刷新；先删再放同名文件、重发 `config` 仍显示最早一次加载的旧图（按路径缓存）。换一个新文件名 + `config` 半秒内换上，无黑屏，左区视频从头播 |
+| 停发心跳 | 回到原厂待机画面，不黑屏 |
+| 访问方式 | HID 用 `/dev/hidrawN`（装 `tools/70-ryuo-iv.rules` 后普通用户可读写）；文件用 `adb push`，出厂就能连，不用另配权限 |

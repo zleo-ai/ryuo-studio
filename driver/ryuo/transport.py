@@ -135,5 +135,73 @@ class HidTransport(Transport):
         self._dev.close()
 
 
+class HidrawTransport(Transport):
+    """Linux ``/dev/hidrawN`` transport with no third-party dependency.
+
+    Preferred on Linux: the PyPI ``hidapi`` wheel uses the libusb backend,
+    which claims the interface away from the kernel. hidraw only needs read/
+    write permission on the node (see ``tools/70-ryuo-iv.rules``).
+    """
+
+    def __init__(self, path: str | None = None) -> None:
+        import os
+
+        if path is None:
+            found = self.find()
+            if not found:
+                raise TransportError("no RYUO IV hidraw node found (product 1C76)")
+            if len(found) > 1:
+                raise TransportError(f"{len(found)} candidate hidraw nodes; pass a path explicitly")
+            path = found[0]
+        self.path = path
+        try:
+            self._fd = os.open(path, os.O_RDWR)
+        except PermissionError as exc:  # pragma: no cover - depends on udev
+            raise TransportError(f"no permission on {path}; install tools/70-ryuo-iv.rules") from exc
+
+    @staticmethod
+    def find() -> list[str]:  # pragma: no cover - needs hardware
+        from pathlib import Path
+
+        res = []
+        for node in sorted(Path("/sys/class/hidraw").glob("hidraw*")):
+            try:
+                uevent = (node / "device" / "uevent").read_text()
+            except OSError:
+                continue
+            hid_id = next((line.split("=", 1)[1] for line in uevent.splitlines() if line.startswith("HID_ID=")), "")
+            parts = hid_id.split(":")
+            if len(parts) == 3 and int(parts[2], 16) == PRODUCT_ID and int(parts[1], 16) in KNOWN_VENDOR_IDS:
+                res.append(f"/dev/{node.name}")
+        return res
+
+    def write_report(self, report: bytes) -> None:  # pragma: no cover - needs hardware
+        import os
+
+        if os.write(self._fd, report) != len(report):
+            raise TransportError("short hidraw write")
+
+    def read_report(self, timeout_ms: int = 0) -> bytes:  # pragma: no cover
+        import os
+        import select
+
+        ready, _, _ = select.select([self._fd], [], [], max(0, timeout_ms) / 1000)
+        if not ready:
+            return b""
+        return os.read(self._fd, REPORT_SIZE + 1)
+
+    def close(self) -> None:  # pragma: no cover
+        import os
+
+        os.close(self._fd)
+
+
+def open_default() -> Transport:  # pragma: no cover - needs hardware
+    """hidraw on Linux, hidapi elsewhere."""
+    import sys
+
+    return HidrawTransport() if sys.platform.startswith("linux") else HidTransport()
+
+
 def frame_to_report(frame: bytes, report_id: int = 0x00) -> bytes:
     return to_report(frame, report_id=report_id)

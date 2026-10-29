@@ -97,9 +97,9 @@ def _readouts(pairs: list[str]) -> dict[str, int]:
 def _open(dry_run: bool) -> Transport:
     if dry_run:
         return FakeTransport()
-    from .transport import HidTransport
+    from .transport import open_default
 
-    return HidTransport()
+    return open_default()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

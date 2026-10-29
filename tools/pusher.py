@@ -8,9 +8,9 @@ config 里 device_enabled=false 时只演练：照样出图、照样组帧，但
 只把要做的事打印出来。
 
 文件名不用 ryuo 开头：屏会先去官方预设目录里按「包含」匹配找同名文件。
-为什么要轮流用两个文件名：屏上的图片加载器很可能按路径缓存，同名覆盖不一定会刷新
-（还没在真机验证），所以 a/b 两个名字交替，每次推完重发一次 config，旧的那张随后删掉。
-代价是每轮画面会重新加载一次，大约 1.6 秒。
+为什么每轮换一个新文件名：1.0.7 实测，屏上的图片加载器按路径缓存，同名覆盖不刷新，
+连「先删再放同名文件」都会显示最早那次的旧图。所以每轮用带时间的新名字，推完重发一次
+config，再删掉上一张。重发 config 时左边视频会从头播，图片半秒内换上，没有黑屏。
 """
 import argparse
 import json
@@ -39,6 +39,14 @@ def conf():
         return {**DEFAULTS, **json.loads(CONF.read_text())}
     except (OSError, ValueError):
         return dict(DEFAULTS)
+
+
+def host_tz():
+    """电脑当前时区名（如 Asia/Shanghai）；不传的话屏按世界标准时间显示。"""
+    try:
+        return str(Path("/etc/localtime").resolve()).split("zoneinfo/", 1)[1]
+    except (OSError, IndexError):
+        return "UTC"
 
 
 def cpu_temp():
@@ -88,8 +96,8 @@ class Screen:
     def __init__(self, live):
         self.live = live
         if live:  # 只有 Maple 允许连接屏幕、装好 udev 规则以后才会走到这里
-            from ryuo.transport import HidTransport
-            self.dev = RyuoDevice(HidTransport())
+            from ryuo.transport import open_default
+            self.dev = RyuoDevice(open_default())
         else:
             self.fake = FakeTransport()
             self.dev = RyuoDevice(self.fake)
@@ -105,12 +113,11 @@ class Screen:
         return 0 if self.live else len(self.fake.frames)
 
 
-def push_round(scr, c, turn, pushed_videos):
+def push_round(scr, c, turn, pushed_videos, last):
     theme, layout = c["theme"], c["layout"]
     view = "strip" if layout == "split" else "usage"
     png = render(theme, view)
-    name = f"lp-panel-{'ab'[turn % 2]}.png"
-    old = f"lp-panel-{'ab'[(turn + 1) % 2]}.png"
+    name = f"lp-panel-{time.strftime('%m%d%H%M%S')}.png"
     scr.adb("push", str(png), SCREEN_DIR + name)
 
     video = latest_video(theme, "main" if layout == "split" else "full")
@@ -123,11 +130,18 @@ def push_round(scr, c, turn, pushed_videos):
     if layout == "split":
         dev.set_media([video.name] if video else [name], zone=0)
         dev.set_media([name], zone=1)
+        # 1.0.7 实测：分屏时第三个读数会画到右边窄条上，所以只留两个
+        dev.set_slots(["Date&Time", "CPU Temperature"])
     else:  # 整屏：视频和用量大图轮流放
         dev.set_media(([video.name] if video else []) + [name], play_mode="Cycle" if video else "Single")
+        dev.set_slots(["Date&Time", "CPU Temperature", "GPU Temperature"])
+    colors = json.loads((ROOT / "themes" / theme / "theme.json").read_text())["colors"]
+    dev.set_colors(colors["title"], colors["content"])
+    dev.screen.time_zone = host_tz()
     dev.apply()
-    if turn:
-        dev.delete_media([old])
+    if last.get("name"):
+        dev.delete_media([last["name"]])
+    last["name"] = name
     say(f"第 {turn + 1} 轮：{theme} · {'分屏' if layout == 'split' else '整屏'} · {name}" + ("" if scr.live else f"（演练，已组 {scr.frames_sent()} 帧）"))
 
 
@@ -138,12 +152,12 @@ def main():
     c = conf()
     scr = Screen(live=bool(c["device_enabled"]))
     say("开始推送" + ("" if scr.live else "（演练模式：不连屏幕）"))
-    pushed, turn = set(), 0
+    pushed, turn, last = set(), 0, {}
     with scr.dev.heartbeat(telemetry):
         while True:
             c = conf()
             try:
-                push_round(scr, c, turn, pushed)
+                push_round(scr, c, turn, pushed, last)
             except (subprocess.SubprocessError, OSError, ValueError) as e:
                 say(f"这一轮没推成：{e}；下一轮再试")
             turn += 1

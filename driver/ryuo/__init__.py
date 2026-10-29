@@ -3,7 +3,7 @@
 from .device import CapabilityWarning, Heartbeat, RyuoDevice
 from .firmware import PROFILES, FirmwareProfile, profile_for
 from .frame import FrameError, FrameTooLarge, decode_frame, encode_frame
-from .transport import FakeTransport, HidTransport, Transport
+from .transport import FakeTransport, HidrawTransport, HidTransport, Transport, open_default
 
 __all__ = [
     "CapabilityWarning",
@@ -13,6 +13,8 @@ __all__ = [
     "FrameTooLarge",
     "Heartbeat",
     "HidTransport",
+    "HidrawTransport",
+    "open_default",
     "PROFILES",
     "RyuoDevice",
     "Transport",
