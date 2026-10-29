@@ -9,7 +9,10 @@
 import argparse
 import calendar
 import json
+import re
+import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 
 SNAPSHOT = Path.home() / ".local/state/aios/quota-snapshot.json"
@@ -30,6 +33,14 @@ PICK = [
 ]
 WEEKDAY = "一二三四五六日"
 
+# 四家都优先直接问 magpie（它自己就在读各家订阅的额度）；问不到的窗口（比如 Grok Build）再用本机快照（omp 那条）。
+# magpie 一次要问好几家，十几秒，所以结果缓存几分钟，推送程序每分钟要数据时不用每次都问。
+MAGPIE_CACHE = Path.home() / ".local/share/ryuo-studio/magpie-accounts.json"
+MAGPIE_TTL_S = 240
+MAGPIE_MAP = {("claude", "5 hours"): "anthropic:5h", ("claude", "7 days"): "anthropic:7d",
+              ("codex", "7 days"): "openai-codex:primary", ("grok", "7 days"): "xai-oauth:credits:1w",
+              ("cursor", "Cursor Models"): "cursor:usd:individual-auto", ("cursor", "Other Models"): "cursor:usd:individual-api"}
+
 
 def window_start_ms(win, reset_ms):
     if win.get("duration_ms"):
@@ -41,6 +52,46 @@ def window_start_ms(win, reset_ms):
         d = min(t.tm_mday, calendar.monthrange(y, m)[1])
         return int(time.mktime((y, m, d, t.tm_hour, t.tm_min, t.tm_sec, 0, 0, -1)) * 1000)
     return reset_ms - WEEK_MS  # Codex 等没写时长的周窗口
+
+
+def iso_ms(v):
+    v = re.sub(r"(\.\d{6})\d+", r"\1", v).replace("Z", "+00:00")  # magpie 给到纳秒，Python 只认到微秒
+    return int(datetime.fromisoformat(v).timestamp() * 1000)
+
+
+def magpie_accounts():
+    fresh = MAGPIE_CACHE.exists() and time.time() - MAGPIE_CACHE.stat().st_mtime < MAGPIE_TTL_S
+    if not fresh:
+        try:
+            out = subprocess.run(["magpie", "accounts", "--json"], capture_output=True, text=True, timeout=60).stdout
+            json.loads(out)
+            MAGPIE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = MAGPIE_CACHE.with_suffix(".tmp")
+            tmp.write_text(out)
+            tmp.replace(MAGPIE_CACHE)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass  # 问不到就用上一份缓存（会按各自的读取时间显示过期），再没有就只用快照
+    try:
+        return json.loads(MAGPIE_CACHE.read_text())
+    except (OSError, ValueError):
+        return []
+
+
+def magpie_windows():
+    """把 magpie 的额度换成快照里同样的窗口格式，带上各自读到的时间。"""
+    wins = {}
+    for acc in magpie_accounts():
+        if not acc.get("active") or not acc.get("readAt"):
+            continue
+        seen = iso_ms(acc["readAt"])
+        for w in acc.get("windows") or []:
+            wid = MAGPIE_MAP.get((acc.get("agent"), w.get("name")))
+            if wid and w.get("used") is not None and w.get("resetsAt"):
+                # Cursor 按自然月计费，不写时长，起点由 window_start_ms 推
+                dur = None if wid.startswith("cursor:") else 5 * 3600000 if w["name"] == "5 hours" else WEEK_MS
+                wins[wid] = {"id": wid, "used_pct": float(w["used"]), "resets_at_ms": iso_ms(w["resetsAt"]),
+                             "duration_ms": dur, "observed_at_ms": seen}
+    return wins
 
 
 def fmt_reset(reset_ms, now_ms):
@@ -83,10 +134,20 @@ def main():
     ap.add_argument("--json", help="另外把数据写成纯 JSON（屏上原生面板用）")
     a = ap.parse_args()
 
-    snap = json.loads(SNAPSHOT.read_text())
-    gen = snap["generated_at_ms"]
+    try:
+        snap = json.loads(SNAPSHOT.read_text())
+    except (OSError, ValueError):
+        snap = {"generated_at_ms": 0, "providers": []}
+    # 快照里只认探针成功的那次时间；单个窗口有自己读取时间的（magpie 合进去的）按它自己的算
+    snap_gen = snap.get("generated_at_ms", 0)
+    wins = {w["id"]: {**w, "observed_at_ms": w.get("observed_at_ms") or snap_gen}
+            for p in snap.get("providers", []) for w in p["windows"]}
+    if a.stale_minutes is None:
+        wins.update(magpie_windows())
+    main_ids = [pick[3] for pick in PICK if pick[3] in wins]
+    seen = [wins[i]["observed_at_ms"] for i in main_ids]
+    gen = max(seen) if seen else snap_gen  # 整块面板的「更新时间」看最新的那家，个别过期的在那一行里单独标
     now = gen + a.stale_minutes * 60000 if a.stale_minutes is not None else int(time.time() * 1000)
-    wins = {w["id"]: w for p in snap["providers"] for w in p["windows"]}
 
     rows = []
     for key, name, _prov, wid, sub, second in PICK:
@@ -99,6 +160,8 @@ def main():
         elapsed = max(0.0, min(100.0, (now - start) / (reset - start) * 100))
         used = float(w["used_pct"])
         word, tone = pace_word(used, elapsed)
+        if (gen - w["observed_at_ms"]) / 60000 > STALE_AFTER_MIN:  # 这一家单独没更新，比如 Cursor 那条探针坏了
+            sub = "停在 " + time.strftime("%H:%M", time.localtime(w["observed_at_ms"] / 1000))
         if used >= 85:
             tone = "hot"
         row = {
