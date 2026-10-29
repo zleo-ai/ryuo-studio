@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+render/data.js
+render/data-stale.js
+# 品牌图标是各公司的商标，不进仓库；安装时由 tools/fetch_logos.sh 下载
+themes/_shared/logos/*.svg

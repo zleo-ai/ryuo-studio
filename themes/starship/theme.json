@@ -1,0 +1,9 @@
+{
+  "id": "starship",
+  "name": "星舰舱",
+  "summary": "深空、光环、青色细线仪表，像飞船驾驶舱里的一块副屏。",
+  "layout": "rings",
+  "colors": {"title": "#2DE2C8", "content": "#E6EEF6"},
+  "assets": {"full": "assets/full.jpg", "main": "assets/main.jpg", "strip": "assets/strip.jpg", "reference": "assets/ref-wide.png"},
+  "videos": []
+}

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>龙屏管理器</title>
+<link rel="stylesheet" href="/repo/themes/_shared/fonts/fonts.css">
+<style>
+:root{--bg:#F5F6F8;--panel:#FFFFFF;--ink:#0E1116;--dim:#5B6472;--line:#E3E6EB;--accent:#0E9F8E;--accentInk:#fff;--warn:#B86A00;--ok:#0E9F8E;--chip:#EEF1F4}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0B0D11;--panel:#13161C;--ink:#E8ECF1;--dim:#8D96A3;--line:#232832;--accent:#2DE2C8;--accentInk:#062723;--warn:#FFB547;--ok:#2DE2C8;--chip:#1B1F27}}
+:root[data-theme="dark"]{--bg:#0B0D11;--panel:#13161C;--ink:#E8ECF1;--dim:#8D96A3;--line:#232832;--accent:#2DE2C8;--accentInk:#062723;--warn:#FFB547;--ok:#2DE2C8;--chip:#1B1F27}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans CJK SC",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;padding:14px 28px;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+header h1{font:400 26px/1 "Smiley Sans","Noto Sans CJK SC";letter-spacing:.04em}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:var(--chip);font-size:13px;color:var(--dim)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.pill.on i{background:var(--ok)}
+header .sp{flex:1}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 16px;border-radius:10px}
+button.pri{background:var(--accent);border-color:var(--accent);color:var(--accentInk);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+main{max-width:1280px;margin:0 auto;padding:28px;display:grid;gap:24px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 24px}
+h2{font-size:18px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+h2 small{font-weight:400;font-size:13px;color:var(--dim)}
+.themes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.tcard{border:2px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;background:var(--bg);transition:border-color .15s}
+.tcard.on{border-color:var(--accent)}
+.tcard img{display:block;width:100%;aspect-ratio:2240/1080;object-fit:cover;background:#000}
+.tcard .b{padding:12px 14px}
+.tcard .b b{font-size:16px}
+.tcard .b p{font-size:13px;color:var(--dim);margin-top:2px}
+.preview{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:16px;align-items:start}
+.preview img{width:100%;border-radius:10px;background:#000;display:block}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:7px 14px;background:transparent;color:var(--dim)}
+.seg button[aria-pressed="true"]{background:var(--chip);color:var(--ink);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px}
+.vids{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.vids video{width:100%;border-radius:10px;background:#000;display:block}
+.vids .m{font-size:13px;color:var(--dim);margin-top:6px}
+.empty{color:var(--dim);font-size:14px;padding:12px 0}
+.jobs li,.log li{list-style:none;font-size:13px;padding:6px 0;border-top:1px solid var(--line);display:flex;gap:12px}
+.jobs ul,.log ul{padding:0}
+.log li span:first-child{color:var(--dim);font-family:"Geist Mono",monospace}
+.note{font-size:13px;color:var(--dim)}
+label.f{display:flex;align-items:center;gap:8px;font-size:14px}
+select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+@media (max-width:720px){main{padding:16px}.preview{grid-template-columns:1fr}header{padding:12px 16px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>龙屏管理器</h1>
+  <span class="pill" id="dev"><i></i><span>读取中</span></span>
+  <span class="sp"></span>
+  <button id="themeBtn" type="button">跟随系统</button>
+  <button class="pri" id="apply" type="button">应用到屏幕</button>
+</header>
+<main>
+  <section>
+    <h2>主题包 <small>点一下就切换，画面、配色、字体和视频一起换</small></h2>
+    <div class="themes" id="themes"></div>
+  </section>
+
+  <section>
+    <h2>现在屏上会是什么样 <small>用的是本机最新的额度数据</small></h2>
+    <div class="row">
+      <div class="seg" id="viewSeg"><button data-v="usage" aria-pressed="true">用量整屏</button><button data-v="preview" aria-pressed="false">分屏效果</button></div>
+      <label class="f"><input type="checkbox" id="stale"> 看数据过期时的样子</label>
+      <button id="refresh" type="button">重新出图</button>
+    </div>
+    <div class="preview"><img id="big" alt="整屏预览"><img id="strip" alt="窄条预览"></div>
+  </section>
+
+  <section>
+    <h2>裸眼 3D 视频 <small>本机 MiniMax H3 生成，首尾帧相同，循环播放没有接缝</small></h2>
+    <div class="row">
+      <label class="f">长度 <select id="secs"><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="15">15 秒</option></select></label>
+      <button class="pri" id="gen" type="button">给当前主题生成一段</button>
+      <span class="note">一段 10 秒大约要 10 分钟，生成时显卡会满载。</span>
+    </div>
+    <div class="vids" id="vids"></div>
+    <div class="jobs"><ul id="jobs"></ul></div>
+  </section>
+
+  <section>
+    <h2>推送设置</h2>
+    <div class="row">
+      <div class="seg" id="layoutSeg"><button data-v="split">分屏（视频 + 用量窄条）</button><button data-v="full">整屏（视频和用量轮流）</button></div>
+      <label class="f">每 <select id="mins"><option>5</option><option>10</option><option selected>15</option><option>30</option></select> 分钟刷新一次用量</label>
+    </div>
+    <p class="note" id="devNote"></p>
+  </section>
+
+  <section class="log">
+    <h2>动态</h2>
+    <ul id="log"></ul>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let S = null, view = "usage";
+const api = (p, b) => fetch(p, b ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)} : {}).then(r => r.json());
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+async function load() {
+  S = await api("/api/state");
+  const c = S.conf;
+  $("#dev").classList.toggle("on", S.device.connected);
+  $("#dev span").textContent = S.device.connected ? "屏幕已连接" : `屏幕：${S.device.mode}`;
+  $("#devNote").textContent = S.device.note;
+  $("#apply").textContent = S.device.connected ? "应用到屏幕" : "演练一次上屏";
+  $("#themes").innerHTML = S.themes.map(t => `<div class="tcard${t.id === c.theme ? " on" : ""}" data-id="${t.id}">
+    <img src="/repo/themes/${t.id}/assets/full.jpg" alt=""><div class="b"><b>${esc(t.name)}</b><p>${esc(t.summary)}</p><p>${t.videos.length ? t.videos.length + " 段视频" : "还没有视频"}</p></div></div>`).join("");
+  const cur = S.themes.find(t => t.id === c.theme);
+  $("#vids").innerHTML = cur && cur.videos.length ? cur.videos.map(v => `<div><video src="${v.url}" muted loop autoplay playsinline></video><div class="m">${esc(v.name)} · ${v.mb} MB</div></div>`).join("")
+    : `<div class="empty">「${esc(cur ? cur.name : c.theme)}」还没有视频。</div>`;
+  $("#jobs").innerHTML = S.jobs.slice().reverse().map(j => `<li><b>${j.state === "running" ? "进行中" : j.state === "done" ? "完成" : "失败"}</b><span>${esc(j.kind)} · ${j.started}</span><span class="note">${esc(j.tail)}</span></li>`).join("");
+  $("#log").innerHTML = S.log.slice().reverse().map(l => `<li><span>${l.t}</span><span>${esc(l.msg)}</span></li>`).join("");
+  document.querySelectorAll("#layoutSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === c.layout));
+  $("#mins").value = String(c.push_minutes);
+}
+async function preview() {
+  const t = S.conf.theme, d = $("#stale").checked ? "stale" : "fresh";
+  $("#big").style.opacity = .4;
+  const [a, b] = await Promise.all([api(`/api/render?theme=${t}&view=${view}&data=${d}`), api(`/api/render?theme=${t}&view=strip&data=${d}`)]);
+  $("#big").src = a.url; $("#strip").src = b.url; $("#big").style.opacity = 1;
+}
+$("#themes").addEventListener("click", async e => {
+  const card = e.target.closest(".tcard"); if (!card) return;
+  await api("/api/conf", {theme: card.dataset.id}); await load(); preview();
+});
+$("#viewSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  view = b.dataset.v; document.querySelectorAll("#viewSeg button").forEach(x => x.setAttribute("aria-pressed", x === b)); preview();
+});
+$("#layoutSeg").addEventListener("click", async e => { const b = e.target.closest("button"); if (b) { await api("/api/conf", {layout: b.dataset.v}); load(); } });
+$("#mins").addEventListener("change", async () => { await api("/api/conf", {push_minutes: +$("#mins").value}); load(); });
+$("#stale").addEventListener("change", preview);
+$("#refresh").addEventListener("click", preview);
+$("#gen").addEventListener("click", async () => {
+  const r = await api("/api/video", {theme: S.conf.theme, seconds: +$("#secs").value});
+  if (r.error) alert(r.error); load();
+});
+$("#apply").addEventListener("click", async () => { await api("/api/apply", {}); load(); });
+
+const modes = ["auto", "light", "dark"], names = {auto: "跟随系统", light: "亮色", dark: "暗色"};
+let mode = "auto";
+try { mode = localStorage.getItem("ryuo:theme") || "auto"; } catch (e) {}
+const setMode = m => { mode = m; if (m === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.dataset.theme = m; $("#themeBtn").textContent = names[m]; try { localStorage.setItem("ryuo:theme", m); } catch (e) {} };
+setMode(mode);
+$("#themeBtn").addEventListener("click", () => setMode(modes[(modes.indexOf(mode) + 1) % 3]));
+
+load().then(preview);
+setInterval(load, 8000);
+</script>
+</body>
+</html>

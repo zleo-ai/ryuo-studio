@@ -1,0 +1,9 @@
+{
+  "id": "inkgold",
+  "name": "墨夜流金",
+  "summary": "夜色水墨山水、金色细线、朱砂刻度，用量做成四支漏刻。",
+  "layout": "tubes",
+  "colors": {"title": "#C9A45C", "content": "#EFE7D4"},
+  "assets": {"full": "assets/full.jpg", "main": "assets/main.jpg", "strip": "assets/strip.jpg", "reference": "assets/ref-wide.png"},
+  "videos": []
+}

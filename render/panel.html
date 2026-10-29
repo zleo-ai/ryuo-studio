@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>龙屏面板</title>
+<!--
+  参数（地址栏 ?a=b）：
+  theme = starship 星舰舱 | inkgold 墨夜流金 | liquid 液态光谱
+  view  = strip   窄条（634×1080，分屏时推上屏的那张）
+        | usage   用量整屏（2240×1080，整屏模式里夹在视频之间放）
+        | preview 效果图：主区背景 + 屏幕自带的时钟温度 + 窄条
+  data  = fresh | stale
+  dx,dy = 防烧屏微移（像素）
+-->
+<link rel="stylesheet" href="../themes/_shared/fonts/fonts.css">
+<script>
+  const P = new URLSearchParams(location.search);
+  const THEME = P.get("theme") || "starship";
+  document.write(`<link rel="stylesheet" href="../themes/${THEME}/theme.css">`);
+  document.write(`<script src="${P.get("data") === "stale" ? "data-stale.js" : "data.js"}"><\/script>`);
+</script>
+<style>
+:root{--w:2240px;--h:1080px;--z2:634px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#000;overflow:hidden}
+body{width:var(--w);height:var(--h);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums lining-nums}
+body.only-strip{width:var(--z2)}
+#screen{position:relative;width:100%;height:100%;display:flex;overflow:hidden;background:#000;color:var(--ink);font-family:var(--f-text)}
+.z1{position:relative;flex:1;height:100%;overflow:hidden}
+.z2{position:relative;width:var(--z2);height:100%;overflow:hidden;flex:none}
+.bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.layer{position:absolute;inset:0}
+.logo{display:inline-grid;place-items:center;color:var(--logo-ink);flex:none}
+.logo svg{width:100%;height:100%;display:block}
+.mono{font-family:var(--f-mono)}
+
+/* 公共：头部、接下来、过期提示 */
+.pane{position:absolute;inset:0;display:flex;flex-direction:column;padding:46px 42px 42px}
+.hd{display:flex;align-items:flex-end;justify-content:space-between}
+.hd h1{font-family:var(--f-head);font-weight:400;font-size:56px;line-height:1;letter-spacing:.04em}
+.hd .ts{font-family:var(--f-mono);font-size:24px;color:var(--dim);letter-spacing:.02em}
+.hd .ts i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:10px;vertical-align:3px;box-shadow:0 0 12px var(--accent)}
+.badge{display:none}
+.stale .badge{display:flex;align-items:center;gap:12px;margin-top:20px;padding:12px 18px;border-radius:12px;font-size:26px;line-height:1.25;color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent);border:1px solid color-mix(in srgb,var(--warn) 38%,transparent)}
+.stale .badge b{flex:none;width:12px;height:12px;border-radius:50%;background:var(--warn)}
+.stale .hd .ts{display:none}
+.stale .gauge{filter:grayscale(1);opacity:.4}
+.next{margin-top:auto;position:relative}
+.next .k{font-family:var(--f-head);font-size:28px;letter-spacing:.12em;color:var(--accent)}
+.next .main{display:flex;align-items:center;gap:16px;margin-top:14px}
+.next .main .nm{font-family:var(--f-name);font-weight:600;font-size:36px}
+.next .main .in{margin-left:auto;font-family:var(--f-num);font-weight:500;font-size:46px;line-height:1}
+.next .main .in small{font-family:var(--f-text);font-size:22px;color:var(--dim);margin-left:6px}
+.next .sub{margin-top:8px;font-size:23px;color:var(--dim);line-height:1.4}
+.next ul{list-style:none;margin-top:16px;display:flex;flex-direction:column;gap:10px}
+.next li{display:flex;align-items:center;gap:12px;font-size:23px;color:var(--dim)}
+.next li .t{margin-left:auto;font-family:var(--f-mono);color:color-mix(in srgb,var(--ink) 70%,transparent)}
+
+/* ===== 星舰舱：环形表 ===== */
+.L-rings .rule{height:2px;margin-top:24px;background:linear-gradient(90deg,var(--accent) 0 44px,transparent 44px 56px,color-mix(in srgb,var(--accent) 30%,transparent) 56px 100%)}
+.L-rings .grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 6px;margin-top:20px}
+.L-rings .cell{display:flex;flex-direction:column;align-items:center}
+.L-rings .ring{position:relative}
+.L-rings .ring .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.L-rings .ring .n{font-family:var(--f-num);font-weight:500;line-height:.9;letter-spacing:-.03em}
+.L-rings .ring .n small{font-size:.36em;font-weight:500;color:var(--dim);margin-left:3px;letter-spacing:0}
+.L-rings .cell .nm{font-family:var(--f-name);font-weight:600;font-size:32px;letter-spacing:.02em;margin-top:-4px}
+.L-rings .cell .sb{font-size:21px;color:var(--dim);margin-top:4px;white-space:nowrap}
+.L-rings .cell .sb.hot{color:var(--hot)}
+.L-rings .next{padding:18px 22px 16px;border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 7%,transparent),transparent)}
+.L-rings .next::before,.L-rings .next::after{content:"";position:absolute;width:18px;height:18px;border:2px solid var(--accent)}
+.L-rings .next::before{top:-2px;left:-2px;border-right:0;border-bottom:0}
+.L-rings .next::after{bottom:-2px;right:-2px;border-left:0;border-top:0}
+
+/* ===== 墨夜流金：漏刻 ===== */
+.L-tubes .pane{padding-left:76px;padding-right:36px}
+.L-tubes .hd h1{font-weight:500;font-size:50px;letter-spacing:.32em;color:var(--accent)}
+.L-tubes .cols{display:grid;grid-template-columns:repeat(4,1fr);margin-top:40px;flex:1}
+.L-tubes .col{display:flex;flex-direction:column;align-items:center}
+.L-tubes .col .logo{width:40px;height:40px;color:var(--logo-ink)}
+.L-tubes .col .n{margin-top:16px;font-family:var(--f-num);font-weight:600;font-size:74px;line-height:.95}
+.L-tubes .col .n small{font-size:28px;color:var(--dim);margin-left:1px}
+.L-tubes .tube{position:relative;margin-top:22px;width:10px;flex:1;max-height:460px;border-radius:5px;background:rgba(201,164,92,.10);box-shadow:inset 0 0 0 1px rgba(201,164,92,.28)}
+.L-tubes .tube i{position:absolute;left:0;right:0;bottom:0;border-radius:5px;background:linear-gradient(0deg,#7a5a24,#e2c27a)}
+.L-tubes .tube i.hot{background:linear-gradient(0deg,#7d2a1c,#e07055)}
+.L-tubes .tube b{position:absolute;left:-13px;right:-13px;height:3px;background:var(--mark);border-radius:2px}
+.L-tubes .col .nm{margin-top:20px;font-family:var(--f-name);font-weight:600;font-size:32px;letter-spacing:.04em}
+.L-tubes .col .sb{font-size:21px;color:var(--accent);opacity:.85;margin-top:4px}
+.L-tubes .col .sb.hot{color:var(--hot);opacity:1}
+.L-tubes .next{margin-top:30px;padding-top:22px;border-top:1px solid var(--line)}
+.L-tubes .next .k{letter-spacing:.3em;font-size:26px}
+
+/* ===== 液态光谱：玻璃卡 ===== */
+.L-cards .hd h1{font-weight:600;font-size:48px;letter-spacing:.01em}
+.L-cards .cards{display:flex;flex-direction:column;gap:14px;margin-top:28px;flex:1}
+.L-cards .card{flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;padding:18px 24px;border-radius:28px;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),inset 0 1px 0 rgba(255,255,255,.12)}
+.L-cards .row1{display:flex;align-items:center;gap:16px}
+.L-cards .chip{width:58px;height:58px;border-radius:17px;display:grid;place-items:center;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.L-cards .chip .logo{width:32px;height:32px}
+.L-cards .who .nm{font-family:var(--f-name);font-weight:600;font-size:32px;line-height:1.1}
+.L-cards .who .sb{font-size:21px;color:var(--dim);margin-top:2px}
+.L-cards .who .sb.hot{color:var(--hot)}
+.L-cards .n{margin-left:auto;font-family:var(--f-num);font-weight:300;font-size:86px;line-height:.85;letter-spacing:-.04em}
+.L-cards .n small{font-size:30px;color:var(--dim);margin-left:2px;letter-spacing:0}
+.L-cards .cap{position:relative;height:14px;border-radius:7px;background:rgba(255,255,255,.07)}
+.L-cards .cap i{position:absolute;left:0;top:0;bottom:0;border-radius:7px;background:linear-gradient(90deg,#8B5CF6,#22D3EE)}
+.L-cards .cap i.hot{background:linear-gradient(90deg,#F59E0B,#EF4444)}
+.L-cards .cap b{position:absolute;top:-7px;bottom:-7px;width:4px;margin-left:-2px;border-radius:2px;background:#fff;opacity:.9}
+.L-cards .next{margin-top:16px;padding:18px 24px;border-radius:28px;background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.L-cards .next .k{font-family:var(--f-text);font-size:22px;letter-spacing:.2em;color:var(--dim)}
+
+/* ===== 用量整屏 ===== */
+.big{position:absolute;inset:0;display:flex;flex-direction:column;padding:72px 84px 66px}
+.big .hd h1{font-size:72px}
+.big .hd .ts{font-size:30px}
+.big .row{display:grid;grid-template-columns:repeat(4,1fr);gap:30px;flex:1;margin-top:30px;align-items:center}
+.big .item{display:flex;flex-direction:column;align-items:center;text-align:center}
+.big .item .nm{display:flex;align-items:center;gap:14px;font-family:var(--f-name);font-weight:600;font-size:48px;margin-top:8px}
+.big .item .sb{font-size:27px;color:var(--dim);margin-top:8px;white-space:nowrap}
+.big .item .sb.hot{color:var(--hot)}
+.big .item .meta{white-space:nowrap;font-family:var(--f-mono);font-size:24px;color:color-mix(in srgb,var(--ink) 55%,transparent);margin-top:8px}
+.big .legend{font-size:24px;color:var(--dim);margin-top:24px}
+.L-tubes .big .tube{max-height:none;width:14px;margin-top:26px;flex:none;height:360px}
+.L-tubes .big .col .n{font-size:118px}
+.L-tubes .big .col .logo{width:56px;height:56px}
+.L-cards .big .row{align-items:stretch;margin-top:60px;margin-bottom:40px}
+.L-cards .big .bcard{justify-content:center;display:flex;flex-direction:column;align-items:center;gap:20px;padding:40px 24px 34px;border-radius:44px;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));box-shadow:inset 0 0 0 1px rgba(255,255,255,.09)}
+.L-cards .big .bcard .chip{width:84px;height:84px;border-radius:24px}
+.L-cards .big .bcard .chip .logo{width:46px;height:46px}
+.L-cards .big .bcard .n{margin:0;font-size:150px}
+.L-cards .big .bcard .cap{width:100%;height:18px}
+.side{position:absolute;inset:0;display:flex;flex-direction:column;padding:72px 46px 66px}
+.L-tubes .side{padding-left:84px}
+.side h2{font-family:var(--f-head);font-weight:400;font-size:50px;letter-spacing:.08em}
+.side .hero{margin-top:40px;display:flex;align-items:center;gap:18px}
+.side .hero .logo{width:64px;height:64px}
+.side .hero .nm{font-family:var(--f-name);font-weight:600;font-size:44px}
+.side .cnt{margin-top:18px;font-family:var(--f-num);font-weight:500;font-size:120px;line-height:1;letter-spacing:-.03em}
+.side .cnt small{font-family:var(--f-text);font-size:30px;color:var(--dim);margin-left:10px;letter-spacing:0}
+.side .cap2{margin-top:10px;font-size:27px;color:var(--dim)}
+.side ul{list-style:none;margin-top:46px;display:flex;flex-direction:column}
+.side li{display:flex;align-items:center;gap:16px;padding:20px 0;border-top:1px solid var(--line);font-size:30px}
+.side li .logo{width:36px;height:36px}
+.side li .t{margin-left:auto;font-family:var(--f-mono);font-size:26px;color:var(--dim)}
+.side .stamp{margin-top:auto;font-size:25px;color:var(--dim)}
+
+/* 屏幕自带读数（效果图用；字体和位置由屏幕固件决定） */
+.fw{position:absolute;font-family:"Ubuntu Sans","Noto Sans CJK SC",sans-serif;line-height:1.05;white-space:nowrap}
+.fw .fl{display:block;font-size:40px;font-weight:500}
+.fw .fv{display:block;font-size:84px;font-weight:600;margin-top:6px}
+.fw .fv small{font-size:40px;font-weight:500;margin-left:8px}
+.fw-time .fv{font-size:200px}
+.fw-time .fl{font-size:44px;opacity:.75;margin-top:14px}
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<script>
+const view = P.get("view") || "strip";
+const dx = +(P.get("dx") || 0), dy = +(P.get("dy") || 0);
+const S = window.SNAP, LOGOS = window.LOGOS || {};
+const THEMES = {starship: {layout: "rings", title: "#2DE2C8", content: "#E6EEF6"},
+                inkgold: {layout: "tubes", title: "#C9A45C", content: "#EFE7D4"},
+                liquid: {layout: "cards", title: "#B69CFF", content: "#FFFFFF"}};
+const TH = THEMES[THEME];
+const asset = n => `../themes/${THEME}/assets/${n}.jpg`;
+const scr = document.getElementById("screen");
+scr.className = `theme L-${TH.layout}` + (S.stale ? " stale" : "");
+if (view === "strip") document.body.classList.add("only-strip");
+const rows = S.rows.filter(r => !r.missing);
+const byResetSoon = [...rows].sort((x, y) => x.resetMs - y.resetMs);
+
+const logo = (k, px) => LOGOS[k] ? `<span class="logo" style="width:${px}px;height:${px}px">${LOGOS[k]}</span>` : "";
+const head = (t, big) => `<div class="hd"><h1>${t}</h1><span class="ts"><i></i>${big ? S.generatedDate + " " : ""}${S.generatedAt} 更新</span></div>
+  <div class="badge"><b></b><span>数据停在 ${S.generatedAt}，已经 ${S.ageMin} 分钟没更新</span></div>`;
+const subText = r => r.second ? `${r.sub} · ${r.second.label} ${r.second.used}%` : `${r.sub} · ${r.pace}`;
+const sbCls = r => r.tone === "hot" ? "sb hot" : "sb";
+
+function ring(r, size, logoPx) {
+  const R = size * 0.40, sw = size * 0.048, C = 2 * Math.PI * R, L = C * 0.75, cx = size / 2;
+  const ticks = [...Array(28)].map((_, i) => {
+    const a = (135 + i * 10) * Math.PI / 180, r1 = R + sw * 0.95, r2 = r1 + (i % 9 === 0 ? 14 : 6);
+    return `<line x1="${cx + r1 * Math.cos(a)}" y1="${cx + r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cx + r2 * Math.sin(a)}" stroke="var(--accent)" stroke-opacity="${i % 9 === 0 ? .75 : .25}" stroke-width="2"/>`;
+  }).join("");
+  const ea = (135 + 270 * r.elapsed / 100) * Math.PI / 180, m1 = R - sw * 1.2, m2 = R + sw * 1.2;
+  const hot = r.tone === "hot", gid = `g${r.key}${size}`;
+  return `<div class="ring gauge" style="width:${size}px;height:${size}px">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <defs><linearGradient id="${gid}" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="${hot ? "#FF7A45" : "var(--accent2)"}"/><stop offset="1" stop-color="${hot ? "var(--hot)" : "var(--accent)"}"/></linearGradient>
+      <filter id="f${gid}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${size * 0.02}"/></filter></defs>
+      ${ticks}
+      <circle cx="${cx}" cy="${cx}" r="${R}" fill="none" stroke="var(--line)" stroke-width="${sw}" stroke-dasharray="${L} ${C}" transform="rotate(135 ${cx} ${cx})" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cx}" r="${R}" fill="none" stroke="url(#${gid})" stroke-width="${sw}" stroke-dasharray="${Math.max(1, L * r.used / 100)} ${C}" transform="rotate(135 ${cx} ${cx})" stroke-linecap="round" filter="url(#f${gid})" opacity=".55"/>
+      <circle cx="${cx}" cy="${cx}" r="${R}" fill="none" stroke="url(#${gid})" stroke-width="${sw}" stroke-dasharray="${Math.max(1, L * r.used / 100)} ${C}" transform="rotate(135 ${cx} ${cx})" stroke-linecap="round"/>
+      <line x1="${cx + m1 * Math.cos(ea)}" y1="${cx + m1 * Math.sin(ea)}" x2="${cx + m2 * Math.cos(ea)}" y2="${cx + m2 * Math.sin(ea)}" stroke="var(--mark)" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+    <div class="c">${logo(r.key, logoPx)}<div class="n" style="font-size:${size * 0.3}px">${r.used}<small>%</small></div></div>
+  </div>`;
+}
+
+function nextBlock(label) {
+  const nx = byResetSoon[0], rest = byResetSoon.slice(1);
+  return `<div class="next">
+    <div class="k">${label}</div>
+    <div class="main">${logo(nx.key, 38)}<span class="nm">${nx.name}</span><span class="in">${nx.resetIn.replace(/ (小时|分钟|天)$/, "<small>$1后重置</small>")}</span></div>
+    <div class="sub">重置前还剩 ${nx.left}% · ${{"偏快": "用得偏快，悠着点", "正好": "节奏正好"}[nx.pace] || "还有富余，放心用"}</div>
+    <ul>${rest.map(r => `<li>${logo(r.key, 26)}<span>${r.name}</span><span class="t">${r.resetAt}</span></li>`).join("")}</ul>
+  </div>`;
+}
+
+// ---------- 窄条 634×1080 ----------
+function strip() {
+  if (TH.layout === "rings") return `<div class="pane">${head("AI 额度")}<div class="rule"></div>
+    <div class="grid">${rows.map(r => `<div class="cell">${ring(r, 214, 30)}<div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div></div>`).join("")}</div>
+    ${nextBlock("接下来")}</div>`;
+  if (TH.layout === "tubes") return `<div class="pane">${head("额度")}
+    <div class="cols">${rows.map(r => `<div class="col gauge">${logo(r.key, 40)}
+      <div class="n">${r.used}<small>%</small></div>
+      <div class="tube"><i class="${r.tone === "hot" ? "hot" : ""}" style="height:${r.used}%"></i><b style="bottom:${r.elapsed}%"></b></div>
+      <div class="nm">${r.name}</div><div class="${sbCls(r)}">${r.sub}</div></div>`).join("")}</div>
+    ${nextBlock("下 一 更")}</div>`;
+  return `<div class="pane">${head("AI 额度")}
+    <div class="cards">${rows.map(r => `<div class="card gauge">
+      <div class="row1"><span class="chip">${logo(r.key, 32)}</span><div class="who"><div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div></div><div class="n">${r.used}<small>%</small></div></div>
+      <div class="cap"><i class="${r.tone === "hot" ? "hot" : ""}" style="width:${Math.max(2, r.used)}%"></i><b style="left:${r.elapsed}%"></b></div></div>`).join("")}</div>
+    ${nextBlock("接下来")}</div>`;
+}
+
+// ---------- 用量整屏 2240×1080（左 1606 大图 + 右 634 接下来） ----------
+function big() {
+  let items;
+  if (TH.layout === "rings") items = rows.map(r => `<div class="item">${ring(r, 340, 52)}<div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div><div class="meta">${r.resetAt} 重置</div></div>`).join("");
+  else if (TH.layout === "tubes") items = rows.map(r => `<div class="item col gauge">${logo(r.key, 56)}
+      <div class="n">${r.used}<small>%</small></div>
+      <div class="tube"><i class="${r.tone === "hot" ? "hot" : ""}" style="height:${r.used}%"></i><b style="bottom:${r.elapsed}%;left:-20px;right:-20px"></b></div>
+      <div class="nm">${r.name}</div><div class="${sbCls(r)}">${r.sub} · ${r.pace}</div><div class="meta">${r.resetAt} 重置</div></div>`).join("");
+  else items = rows.map(r => `<div class="item bcard gauge"><span class="chip">${logo(r.key, 46)}</span>
+      <div class="n">${r.used}<small>%</small></div>
+      <div class="cap"><i class="${r.tone === "hot" ? "hot" : ""}" style="width:${Math.max(2, r.used)}%"></i><b style="left:${r.elapsed}%"></b></div>
+      <div class="nm">${r.name}</div><div class="${sbCls(r)}">${subText(r)}</div><div class="meta">${r.resetAt} 重置</div></div>`).join("");
+  return `<div class="big">${head(TH.layout === "tubes" ? "额度" : "AI 额度", true)}
+    <div class="row">${items}</div>
+    <div class="legend">${TH.layout === "tubes" ? "金色是已经用掉的，红线是这一期的时间走到哪了" : "彩色是已经用掉的，白色细线是这一期的时间走到哪了"}</div></div>`;
+}
+function side() {
+  const nx = byResetSoon[0];
+  return `<div class="side"><h2>${TH.layout === "tubes" ? "下 一 更" : "接下来"}</h2>
+    <div class="hero">${logo(nx.key, 64)}<span class="nm">${nx.name}</span></div>
+    <div class="cnt">${nx.resetIn.replace(/ (小时|分钟|天)$/, "<small>$1后重置</small>")}</div>
+    <div class="cap2">重置前还剩 ${nx.left}%</div>
+    <ul>${byResetSoon.map(r => `<li>${logo(r.key, 36)}<span>${r.name}</span><span class="t">${r.resetAt}</span></li>`).join("")}</ul>
+    <div class="stamp">${S.stale ? `<span style="color:var(--warn)">● 数据停在 ${S.generatedAt}</span>` : "每 15 分钟更新一次"}</div></div>`;
+}
+
+const HOST = {time: S.now, date: "10-29 周四", cpu: 46, gpu: 45};
+const fw = (x, y, l, v, u) => `<div class="fw" style="left:${x}px;top:${y}px"><span class="fl" style="color:${TH.title}">${l}</span><span class="fv" style="color:${TH.content}">${v}<small>${u}</small></span></div>`;
+const fwTime = `<div class="fw fw-time" style="left:96px;top:70px;color:${TH.content}"><span class="fv">${HOST.time}</span><span class="fl">${HOST.date}</span></div>`;
+
+let html;
+if (view === "strip") html = `<div class="z2"><div class="bg" style="background-image:url('${asset("strip")}')"></div><div class="layer">${strip()}</div></div>`;
+else if (view === "usage") html = `<div class="z1"><div class="bg" style="background-image:url('${asset("main")}');filter:brightness(${THEME === "liquid" ? .16 : .26}) saturate(.8)"></div><div class="layer">${big()}</div></div>
+  <div class="z2"><div class="bg" style="background-image:url('${asset("strip")}')"></div><div class="layer">${side()}</div></div>`;
+else html = `<div class="z1"><div class="bg" style="background-image:url('${asset("main")}')"></div><div class="layer">${fwTime}${fw(104, 830, "CPU", HOST.cpu, "°C")}${fw(420, 830, "GPU", HOST.gpu, "°C")}</div></div>
+  <div class="z2"><div class="bg" style="background-image:url('${asset("strip")}')"></div><div class="layer">${strip()}</div></div>`;
+scr.innerHTML = html;
+scr.querySelectorAll(".layer").forEach(el => el.style.transform = `translate(${dx}px,${dy}px)`);
+</script>
+</body>
+</html>
