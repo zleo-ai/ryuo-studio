@@ -10,6 +10,7 @@ import argparse
 import calendar
 import json
 import re
+import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -63,7 +64,9 @@ def magpie_accounts():
     fresh = MAGPIE_CACHE.exists() and time.time() - MAGPIE_CACHE.stat().st_mtime < MAGPIE_TTL_S
     if not fresh:
         try:
-            out = subprocess.run(["magpie", "accounts", "--json"], capture_output=True, text=True, timeout=60).stdout
+            # 后台服务的 PATH 里没有 ~/.local/bin，按完整路径找
+            exe = shutil.which("magpie") or str(Path.home() / ".local/bin/magpie")
+            out = subprocess.run([exe, "accounts", "--json"], capture_output=True, text=True, timeout=60).stdout
             json.loads(out)
             MAGPIE_CACHE.parent.mkdir(parents=True, exist_ok=True)
             tmp = MAGPIE_CACHE.with_suffix(".tmp")

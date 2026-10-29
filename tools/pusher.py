@@ -36,7 +36,8 @@ CONF = Path.home() / ".config" / "ryuo-studio" / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 SCREEN_DIR = "/sdcard/pcMedia/"
 DEFAULTS = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False, "renderer": "native",
-            "full_show_seconds": 15, "full_hide_seconds": 45, "panel_width": 634, "panel_glass": True}
+            "full_show_seconds": 15, "full_hide_seconds": 45, "panel_width": 634, "panel_glass": True,
+            "hud": True, "hud_items": ["cpu", "gpu", "mem"]}
 NATIVE_TICK_S, NATIVE_DATA_S = 5, 60
 
 
@@ -76,6 +77,58 @@ def gpu_temp():
         return int(out.split()[0])
     except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         return None
+
+
+_cpu_prev = None
+
+
+def cpu_load():
+    """两次读 /proc/stat 之间 CPU 忙的比例；第一次没有上一次，返回 None。"""
+    global _cpu_prev
+    try:
+        v = [int(x) for x in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
+    except (OSError, ValueError):
+        return None
+    idle, total = v[3] + v[4], sum(v)
+    prev, _cpu_prev = _cpu_prev, (idle, total)
+    if not prev or total == prev[1]:
+        return None
+    return round(100 * (1 - (idle - prev[0]) / (total - prev[1])))
+
+
+def mem():
+    try:
+        kv = {line.split(":")[0]: int(line.split()[1]) for line in Path("/proc/meminfo").read_text().splitlines()}
+    except (OSError, ValueError, IndexError):
+        return None
+    total, avail = kv["MemTotal"], kv["MemAvailable"]
+    return {"pct": round(100 * (total - avail) / total), "usedGb": (total - avail) / 1048576, "totalGb": total / 1048576}
+
+
+def gpu():
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=5).stdout
+        temp, load = (int(x) for x in out.splitlines()[0].split(","))
+        return {"temp": temp, "load": load}
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+
+
+def sys_stats():
+    """屏上左边那排占用：读不到的项不写，屏上显示破折号。"""
+    out = {"t": "sys"}
+    c = {}
+    if (t := cpu_temp()) is not None:
+        c["temp"] = t
+    if (ld := cpu_load()) is not None:
+        c["load"] = ld
+    out["cpu"] = c
+    if (g := gpu()) is not None:
+        out["gpu"] = g
+    if (m := mem()) is not None:
+        out["mem"] = m
+    return out
 
 
 def telemetry():
@@ -153,7 +206,11 @@ def push_round(scr, c, turn, pushed_videos, last, native=False):
         dev.set_media([video.name] if video else [], play_mode="Single")
         # 屏幕自带的时间、温度：6 个固定位置，数组下标就是位置，空串是空位。
         # 整屏默认全空（会和浮出的面板叠在一起）；玻璃分屏默认左边两项（第三项会被面板盖住）
-        dev.set_slots(c.get("split_slots", ["Date&Time", "CPU Temperature"]) if glass else c.get("full_slots", []))
+        # 开了左边时钟（hud）就由屏上程序自己画，屏幕自带的读数关掉免得叠在一起
+        if glass:
+            dev.set_slots([] if c.get("hud") else c.get("split_slots", ["Date&Time", "CPU Temperature"]))
+        else:
+            dev.set_slots(c.get("full_slots", []))
     else:  # 整屏：视频和用量大图轮流放
         dev.set_media(([video.name] if video else []) + [name], play_mode="Cycle" if video else "Single")
         dev.set_slots(["Date&Time", "CPU Temperature", "GPU Temperature"])
@@ -184,7 +241,7 @@ def main():
         while True:
             c = conf()
             use_native = native is not None and c["renderer"] == "native"
-            key = (c["theme"], c["layout"], use_native, bool(c["panel_glass"]),
+            key = (c["theme"], c["layout"], use_native, bool(c["panel_glass"]), bool(c["hud"]),
                    json.dumps([c.get("split_slots"), c.get("full_slots")]))
             wait = max(1, int(c["push_minutes"])) * 60
             try:
@@ -199,7 +256,8 @@ def main():
                         data_at = 0
                     fresh = native.ensure()
                     mode = {"full": c["layout"] != "split", "show": c["full_show_seconds"], "hide": c["full_hide_seconds"],
-                            "width": int(c["panel_width"]) if c["panel_glass"] else 634, "glass": bool(c["panel_glass"])}
+                            "width": int(c["panel_width"]) if c["panel_glass"] else 634, "glass": bool(c["panel_glass"]),
+                            "hud": bool(c["hud"]), "hudItems": list(c["hud_items"])}
                     if mode != sent_mode:  # 只改了浮出节奏：马上送，不用重发 config
                         data_at = 0
                     if fresh or time.time() - data_at >= NATIVE_DATA_S:
@@ -209,7 +267,7 @@ def main():
                             say(f"原生面板已连上：{c['theme']}")
                         data_at = time.time()
                     else:
-                        native.send({"t": "ping"})
+                        native.send(sys_stats() if c["hud"] else {"t": "ping"})
                 else:
                     if native is not None and native.sock is not None:
                         native.send({"t": "hide"})

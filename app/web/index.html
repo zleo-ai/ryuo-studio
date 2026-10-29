@@ -97,8 +97,10 @@ select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--li
     <div class="row">
       <div class="seg" id="glassSeg"><button data-v="1">透明玻璃（视频铺满，面板叠上去）</button><button data-v="0">实底窄条</button></div>
       <label class="f" id="widthOpt">面板宽 <select id="pw"><option value="560">560</option><option value="634">634（正好是弯曲那段）</option><option value="720">720</option><option value="800">800</option></select> 像素</label>
-      <label class="f">时间放在 <select id="slotTime"></select></label>
-      <label class="f">CPU 温度放在 <select id="slotCpu"></select></label>
+      <div class="seg" id="hudSeg"><button data-v="1">左边显示时钟和占用</button><button data-v="0">用屏幕自带的</button></div>
+      <span class="f" id="hudItems">显示：<label><input type="checkbox" value="cpu"> CPU</label> <label><input type="checkbox" value="gpu"> 显卡</label> <label><input type="checkbox" value="mem"> 内存</label></span>
+      <label class="f slotOpt">时间放在 <select id="slotTime"></select></label>
+      <label class="f slotOpt">CPU 温度放在 <select id="slotCpu"></select></label>
       <label class="f" id="fullOpt">整屏时用量每 <select id="hide"><option value="30">30 秒</option><option value="45" selected>45 秒</option><option value="90">90 秒</option><option value="180">3 分钟</option></select>
         浮出一次，停 <select id="show"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select></label>
       <label class="f" id="minsOpt">图片每 <select id="mins"><option>5</option><option>10</option><option selected>15</option><option>30</option></select> 分钟刷新一次</label>
@@ -158,6 +160,14 @@ async function load() {
     sel.value = i < 0 ? "" : String(i);
   }
   $("#glassSeg").hidden = rend !== "native";
+  // 自己画的时钟只在「面板常驻 + 透明玻璃」时有，那时屏幕自带的读数就不用了
+  const hudAble = rend === "native" && c.layout === "split" && glass, hudOn = hudAble && c.hud !== false;
+  $("#hudSeg").hidden = !hudAble;
+  document.querySelectorAll("#hudSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === (c.hud !== false ? "1" : "0")));
+  $("#hudItems").hidden = !hudOn;
+  const items = c.hud_items || ["cpu", "gpu", "mem"];
+  document.querySelectorAll("#hudItems input").forEach(x => x.checked = items.includes(x.value));
+  document.querySelectorAll(".slotOpt").forEach(x => x.hidden = hudOn);
   $("#widthOpt").hidden = rend !== "native";
 }
 async function preview() {
@@ -187,6 +197,10 @@ async function saveSlots(changed) {
   while (arr.length && arr[arr.length - 1] === "") arr.pop();
   await api("/api/conf", {[S.conf.layout === "full" ? "full_slots" : "split_slots"]: arr}); load();
 }
+$("#hudSeg").addEventListener("click", async e => { const b = e.target.closest("button"); if (b) { await api("/api/conf", {hud: b.dataset.v === "1"}); load(); } });
+$("#hudItems").addEventListener("change", async () => {
+  await api("/api/conf", {hud_items: [...document.querySelectorAll("#hudItems input:checked")].map(x => x.value)}); load();
+});
 $("#slotTime").addEventListener("change", () => saveSlots("#slotTime"));
 $("#slotCpu").addEventListener("change", () => saveSlots("#slotCpu"));
 $("#pw").addEventListener("change", async () => { await api("/api/conf", {panel_width: +$("#pw").value}); load(); });

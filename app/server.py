@@ -23,7 +23,7 @@ CONF = CONF_DIR / "config.json"
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 DEFAULT_CONF = {"theme": "starship", "layout": "split", "push_minutes": 15, "device_enabled": False,
                 "renderer": "native", "full_show_seconds": 15, "full_hide_seconds": 45,
-                "panel_width": 634, "panel_glass": True}
+                "panel_width": 634, "panel_glass": True, "hud": True, "hud_items": ["cpu", "gpu", "mem"]}
 PORT = 7788
 SLOT_CHOICES = {"", "Date&Time", "CPU Temperature", "GPU Temperature"}
 
@@ -173,9 +173,12 @@ class H(BaseHTTPRequestHandler):
         conf = load_conf()
         if p == "/api/conf":
             for k in ("theme", "layout", "push_minutes", "renderer", "full_show_seconds", "full_hide_seconds",
-                      "panel_width", "panel_glass"):
+                      "panel_width", "panel_glass", "hud"):
                 if k in b:
                     conf[k] = b[k]
+            v = b.get("hud_items")
+            if isinstance(v, list) and all(x in ("cpu", "gpu", "mem") for x in v):
+                conf["hud_items"] = v
             for k in ("split_slots", "full_slots"):  # 屏幕自带读数：6 个固定位置，下标即位置
                 v = b.get(k)
                 if isinstance(v, list) and len(v) <= 6 and all(x in SLOT_CHOICES for x in v):

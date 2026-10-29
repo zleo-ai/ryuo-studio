@@ -61,6 +61,11 @@ public final class RyuoPanel {
     // 窄条宽度由电脑送来；玻璃模式下底下是整屏视频，面板半透明叠在上面
     static volatile int W = 634, X = 1606;
     static volatile boolean glassMode;
+    // 左边平面区：自己画的时钟和电脑占用（玻璃分屏时）。sys 由电脑每 5 秒送一次
+    static volatile boolean hud;
+    static volatile List<String> hudItems = new ArrayList<>();
+    static volatile JSONObject sys;
+    static volatile long sysAt;
     static final long SILENT_HIDE_MS = 20_000, STALE_AFTER_MS = 30 * 60_000, ANIM_MS = 900;
 
     static volatile Theme theme;
@@ -133,8 +138,17 @@ public final class RyuoPanel {
                     W = w;
                     X = FULL_W - w;
                     glassMode = md.optBoolean("glass", false);
+                    hud = md.optBoolean("hud", false);
+                    List<String> items = new ArrayList<>();
+                    JSONArray ia = md.optJSONArray("hudItems");
+                    if (ia != null) for (int i = 0; i < ia.length(); i++) items.add(ia.getString(i));
+                    hudItems = items;
                 }
                 hideReq = false;
+                break;
+            case "sys":
+                sys = m;
+                sysAt = System.currentTimeMillis();
                 break;
             case "hide":
                 hideReq = true;
@@ -192,7 +206,8 @@ public final class RyuoPanel {
             Theme th = theme;
             Data d = data;
             boolean isFull = full;
-            layer(isFull);
+            boolean wide = !isFull && glassMode && hud;
+            layer(isFull || wide);
             float a = isFull ? cycleAlpha(now) : 1;
             boolean want = th != null && d != null && !hideReq && now - lastMsg < SILENT_HIDE_MS && a > 0;
             if (want != visible) {
@@ -210,7 +225,9 @@ public final class RyuoPanel {
                 animating = step(d, now) || a < 1;
                 Canvas c = surface.lockHardwareCanvas();
                 try {
-                    new Painter(c, th, d, shown, now, isFull).draw();
+                    Painter pt = new Painter(c, th, d, shown, now, isFull);
+                    pt.wide = wide;
+                    pt.draw();
                 } finally {
                     surface.unlockCanvasAndPost(c);
                 }
@@ -384,6 +401,7 @@ public final class RyuoPanel {
         final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         final boolean full;
+        boolean wide;  // 图层铺满整屏，但面板还是右边窄条，左边画时钟和占用
 
         Painter(Canvas c, Theme th, Data d, Map<String, Float> shown, long now, boolean full) {
             this.full = full;
@@ -403,6 +421,16 @@ public final class RyuoPanel {
                 drawFull();
                 return;
             }
+            if (wide) {
+                hudLeft();
+                c.save();
+                c.translate(X, 0);
+            }
+            drawStrip();
+            if (wide) c.restore();
+        }
+
+        void drawStrip() {
             if (glassMode) {
                 backdrop(0);
             } else if (th.strip != null) {
@@ -422,6 +450,72 @@ public final class RyuoPanel {
                 default: rings();
             }
             c.restore();
+        }
+
+        /** 左边平面区：日期、大时钟，下面一排电脑占用。视频亮，所以从左往右垫一层很淡的暗。 */
+        void hudLeft() {
+            p.reset();
+            p.setColor(0xFF000000);
+            p.setShader(new LinearGradient(0, 0, X * .62f, 0, alpha(0xFF000000, .38f), alpha(0xFF000000, 0), Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, X, H, p);
+            p.setShader(null);
+            int[] dd = drift();
+            c.save();
+            c.translate(dd[0], dd[1]);
+            float x0 = 96;
+            Calendar t = Calendar.getInstance(d.tz);
+            t.setTimeInMillis(now);
+            String date = String.format("%d月%d日  周%s", t.get(Calendar.MONTH) + 1, t.get(Calendar.DAY_OF_MONTH),
+                    "日一二三四五六".charAt(t.get(Calendar.DAY_OF_WEEK) - 1));
+            TextPaint dp = font(th.text, 40, th.dim, .08f);
+            c.drawText(date, x0 + 6, 190, dp);
+            TextPaint cp = font(th.num, 236, th.ink, -.02f);
+            String hm = String.format("%02d:%02d", t.get(Calendar.HOUR_OF_DAY), t.get(Calendar.MINUTE));
+            c.drawText(hm, x0, 410, cp);
+            TextPaint sp = font(th.num, 64, th.accent, 0);
+            c.drawText(String.format("%02d", t.get(Calendar.SECOND)), x0 + cp.measureText(hm) + 18, 410, sp);
+
+            List<String> items = hudItems;
+            if (!items.isEmpty()) {
+                JSONObject s = sys;
+                boolean fresh = s != null && now - sysAt < 20_000;
+                float y = 560, colW = Math.min(330, (X - x0 - 140) / (float) items.size());
+                p.reset();
+                p.setColor(alpha(th.ink, .18f));
+                c.drawRect(x0 + 4, y - 4, x0 + colW * items.size() - 40, y - 2, p);
+                for (int i = 0; i < items.size(); i++) stat(items.get(i), s, fresh, x0 + 4 + i * colW, y + 64);
+            }
+            c.restore();
+        }
+
+        /** 一项占用：小标题、大数字、一行小字。读不到就写破折号，不编数。 */
+        void stat(String key, JSONObject s, boolean fresh, float x, float y) {
+            String label, big = "—", unit = "", sub = "";
+            int color = th.ink;
+            JSONObject o = fresh ? s.optJSONObject(key) : null;
+            switch (key) {
+                case "cpu": label = "CPU"; break;
+                case "gpu": label = "显卡"; break;
+                default: label = "内存";
+            }
+            if (o != null) {
+                if (key.equals("mem")) {
+                    int pct = o.optInt("pct", -1);
+                    if (pct >= 0) { big = String.valueOf(pct); unit = "%"; }
+                    sub = String.format("%.0f / %.0f GB", o.optDouble("usedGb", 0), o.optDouble("totalGb", 0));
+                    if (pct >= 90) color = th.hot;
+                } else {
+                    int temp = o.optInt("temp", -1), load = o.optInt("load", -1);
+                    if (temp >= 0) { big = String.valueOf(temp); unit = "°C"; }
+                    if (load >= 0) sub = "占用 " + load + "%";
+                    if (temp >= 85) color = th.hot;
+                }
+            }
+            c.drawText(label, x, y, font(th.text, 34, th.dim, .1f));
+            TextPaint bp = font(th.num, 118, color, -.01f);
+            c.drawText(big, x - 4, y + 132, bp);
+            if (!unit.isEmpty()) c.drawText(unit, x - 4 + bp.measureText(big) + 8, y + 132, font(th.num, 42, th.dim, 0));
+            if (!sub.isEmpty()) c.drawText(sub, x, y + 190, font(th.mono, 30, th.dim, 0));
         }
 
         int[] drift() {
