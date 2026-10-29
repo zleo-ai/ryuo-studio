@@ -49,12 +49,10 @@ python3 -m pytest
 
 ## 许可证
 
-TODO(Maple)：发布前定许可证。建议 MIT。
-
-理由：本包是净室实现。我们只读了 FoxPodZ/ryuo-iv-screen（GPL-3.0）的协议文档和抓包里的协议事实，代码和结构都是自己写的；该文档也明说协议本身不受版权保护、可以任何许可证重新实现。测试里引用的几段抓包负载是设备通信数据（事实），不是对方的代码。MIT 最省事、最利于别人复用；如果想要专利授权条款，可以选 Apache-2.0。参考项目许可：FoxPodZ 与 shorti1996/ryuo-display 为 GPL-3.0，Jacksongio 为 MIT，dragocz95 的 README 写 MIT 但仓库没有 LICENSE 文件。
+[MIT](../LICENSE)。本包是净室实现：只参考了公开协议笔记和抓包里的协议事实，代码和结构是自己写的。协议说明见 [`../docs/protocol.md`](../docs/protocol.md)。
 
 ---
 
 ## English
 
-`ryuo` is a clean-room Python host driver for the curved 2240×1080 LCD on the ASUS ROG RYUO IV AIO cooler. It frames and validates requests (0x5A delimiters, byte stuffing, additive checksum, hard 1024-byte limit), builds typed payloads for `config`, `preset`, `all` telemetry, brightness, screen on/off, media list/delete and split mode, and keeps the session alive with a background heartbeat. Dry-run is the default in the CLI. Firmware differences are handled through a capability table (default profile 1.0.7; unknown versions are conservative). Protocol facts come from FoxPodZ's reverse-engineering notes; no third-party code was copied. Licence: TBD (MIT suggested).
+`ryuo` is a clean-room Python host driver for the curved 2240×1080 LCD on the ASUS ROG RYUO IV AIO cooler. It frames and validates requests (0x5A delimiters, byte stuffing, additive checksum, hard 1024-byte limit), builds typed payloads for `config`, `preset`, `all` telemetry, brightness, screen on/off, media list/delete and split mode, and keeps the session alive with a background heartbeat. Dry-run is the default in the CLI. Firmware differences are handled through a capability table (default profile 1.0.7; unknown versions are conservative). Protocol facts come from public reverse-engineering notes; no third-party code was copied. Licence: MIT.
