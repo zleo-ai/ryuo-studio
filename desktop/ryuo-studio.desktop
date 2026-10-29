@@ -2,7 +2,7 @@
 Type=Application
 Name=龙屏
 Comment=龙神四代水冷屏：主题、视频、实时额度面板
-Exec=@HOME@/AIOS/ryuo-studio/desktop/ryuo-studio.sh
+Exec=@ROOT@/desktop/ryuo-studio.sh
 Icon=ryuo-studio
 Terminal=false
 Categories=Utility;

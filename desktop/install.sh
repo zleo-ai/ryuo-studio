@@ -8,10 +8,12 @@ units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 mkdir -p "$units" "$apps" "$icons" "$HOME/.local/share/ryuo-studio"
-install -m 644 "$here/ryuo-pusher.service" "$here/ryuo-manager.service" \
-  "$here/ryuo-openrgb.service" "$here/ryuo-lights.service" "$units/"
+root="$(dirname "$here")"  # 仓库放在哪都行，服务文件里的 @ROOT@ 换成这里
+for u in ryuo-pusher ryuo-manager ryuo-openrgb ryuo-lights; do
+  sed "s|@ROOT@|$root|g" "$here/$u.service" > "$units/$u.service"
+done
 install -m 644 "$here/ryuo-studio.svg" "$icons/ryuo-studio.svg"
-sed "s|@HOME@|$HOME|g" "$here/ryuo-studio.desktop" > "$apps/ryuo-studio.desktop"
+sed "s|@ROOT@|$root|g" "$here/ryuo-studio.desktop" > "$apps/ryuo-studio.desktop"
 systemctl --user daemon-reload
 if [ "${1:-}" != "--no-auto" ]; then
   systemctl --user enable ryuo-manager.service ryuo-pusher.service

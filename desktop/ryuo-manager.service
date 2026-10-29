@@ -2,8 +2,8 @@
 Description=龙屏管理器（本机网页后端，127.0.0.1:7788）
 
 [Service]
-WorkingDirectory=%h/AIOS/ryuo-studio
-ExecStart=/usr/bin/python3 -I %h/AIOS/ryuo-studio/app/server.py
+WorkingDirectory=@ROOT@
+ExecStart=/usr/bin/python3 -I @ROOT@/app/server.py
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:%h/.local/share/ryuo-studio/app.log

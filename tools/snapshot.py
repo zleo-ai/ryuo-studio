@@ -9,6 +9,7 @@
 import argparse
 import calendar
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -16,7 +17,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-SNAPSHOT = Path.home() / ".local/state/aios/quota-snapshot.json"
+# 额度快照：一份 {"generated_at_ms", "providers":[{"windows":[{"id","used_pct","resets_at_ms",...}]}]} 的 JSON，
+# 作者本机由另一个采样程序每 15 分钟写一次；别的机器可以用 RYUO_QUOTA_SNAPSHOT 指到自己的文件，没有也行（只靠 magpie）
+SNAPSHOT = Path(os.environ.get("RYUO_QUOTA_SNAPSHOT", Path.home() / ".local/state/aios/quota-snapshot.json"))
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "render" / "data.js"
 LOGO_DIR = ROOT / "themes" / "_shared" / "logos"

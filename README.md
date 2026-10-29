@@ -63,6 +63,10 @@ powershell -ExecutionPolicy Bypass -File desktop\install_windows.ps1
 - 屏上的时区用「GMT+08:00」这种偏移写法：Windows 拿不到 IANA 时区名，有夏令时的地方，切换后最多一分钟屏上时间就跟着改过来（每次送数据都重算偏移）。
 - 想自己编屏上程序的话，用 `python overlay\build.py`（Linux 上 `overlay/build.sh` 也还能用）。
 
+## 额度从哪来
+
+面板显示 Claude、Codex、Grok、Cursor 四家订阅的用量和重置时间。`tools/snapshot.py` 先问 magpie 的 `magpie accounts --json`（装了的话），缺的窗口再从一份快照 JSON 里补，路径用 `RYUO_QUOTA_SNAPSHOT` 指定，格式写在 `snapshot.py` 开头。两样都没有的话，面板会显示「数据过期」，不会编数。
+
 ## 加一个主题
 
 复制 `themes/starship/`，改 `theme.json` 里的 `id`、`name`、`layout`（`rings` 环形表 / `tubes` 漏刻 / `cards` 玻璃卡）和 `colors`，换掉 `assets/` 里的三张背景和 `theme.css` 里的配色字体即可。管理器会自动列出来。
@@ -76,8 +80,8 @@ powershell -ExecutionPolicy Bypass -File desktop\install_windows.ps1
 
 ## 授权
 
-代码：TODO（打算用 MIT）。字体见 `themes/_shared/fonts/FONTS.md`（都是 SIL OFL 1.1）。四家 AI 的图标是各自公司的商标，不随仓库分发，用 `tools/fetch_logos.sh` 在本机下载。
+代码：[MIT](LICENSE)。字体见 `themes/_shared/fonts/FONTS.md`（都是 SIL OFL 1.1）。四家 AI 的图标是各自公司的商标，不随仓库分发，用 `tools/fetch_logos.sh` 在本机下载。
 
 ---
 
-**English.** Linux toolkit for the ROG RYUO IV curved AIO screen: a clean-room HID driver (`driver/`), switchable theme packs, an AI-quota panel rendered on the host and pushed to the screen, seamless-loop "3D" clips generated locally with MiniMax H3 via ComfyUI, and a localhost web manager. No firmware changes; dry-run by default.
+**English.** Linux toolkit for the ROG RYUO IV curved AIO screen: a clean-room HID driver (`driver/`), switchable theme packs, an AI-quota panel rendered on the host and pushed to the screen, seamless-loop "3D" clips generated locally with MiniMax H3 via ComfyUI, and a localhost web manager. No firmware changes; dry-run by default. MIT licensed.
