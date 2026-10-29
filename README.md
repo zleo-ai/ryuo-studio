@@ -12,7 +12,7 @@
 | `docs/` | `protocol.md` 协议说明（每项标注在哪个固件版本验证过）、`firmware.md` 固件版本调研。 |
 | `themes/` | 主题包。每个包一个目录：`theme.json`（名字、布局、两种可调颜色）、`theme.css`（配色和字体）、`assets/`（整屏、主区、窄条三种尺寸的背景）、`video-prompt.txt`（生成视频用的描述）。 |
 | `render/panel.html` | 额度面板的渲染页：窄条 634×1080、用量整屏 2240×1080、分屏效果图。 |
-| `tools/` | `snapshot.py` 读额度快照、`render.sh` 无头 Chrome 出图、`gen_video.py` 调本机 ComfyUI 里的 MiniMax H3 生成首尾相接的循环视频、`finish_video.sh` 放大并转成屏幕能播的 HEVC、`pusher.py` 常驻推送。 |
+| `tools/` | `snapshot.py` 读额度快照、`render.sh` 无头 Chrome 出图、`gen_video.py` 调本机 ComfyUI 里的 MiniMax H3 生成首尾相接的循环视频、`finish_video.sh` 放大并转成屏幕能播的 HEVC、`pusher.py` 常驻推送、`aura_sync.py` 神光同步（`openrgb_sdk.py` 是它用的 OpenRGB 客户端）。 |
 | `app/` | 管理器：挑主题、看实时效果、生成视频、改推送设置、开关推送。 |
 | `desktop/` | 桌面应用：`bash desktop/install.sh` 装好后在应用中心搜「龙屏」，可固定到 Dock。推送和管理器做成登录自启的用户服务（`--no-auto` 则只在点图标时启动），点图标打开独立窗口，不用记端口。 |
 
@@ -24,6 +24,16 @@
 
 两种方式都要主机每秒给屏发一次心跳（CPU、显卡温度），不然约 10 秒后屏回到待机画面，推送程序在后台一直发。
 
+## 神光同步（整机灯效跟主题走）
+
+`tools/aura_sync.py` 经本机 OpenRGB 服务端给主板（含三路 ARGB，龙王的风扇和冷头灯接在这上面）、内存、显卡推实时颜色，30 帧（内存、显卡走 SMBus，15 帧）。颜色和屏上面板同一对：主色取主题的标题色，副色取 `theme.css` 的 `--accent2`；管理器里换主题，灯在 1.5 秒内渐变过去。主题想给灯单独定颜色，在 `theme.json` 里加 `"lights": {"colors": ["#..", "#.."], "effect": "breathe"}`。
+
+需要 OpenRGB 1.0 以上（本机 2026-10-29 装的是官方 1.1 的 Debian trixie 包和配套的 `libhidapi-hotplug`）。`desktop/install.sh` 会装两个用户服务：`ryuo-openrgb`（只听 127.0.0.1 的服务端）和 `ryuo-lights`（同步本身）。`python3 -I tools/aura_sync.py --preview` 不连设备，只打印当前主题算出来的颜色。
+
+设置写在 `~/.config/ryuo-studio/config.json`，都可省：`lights_enabled`、`lights_effect`（`flow` 流光 / `breathe` 呼吸 / `static` 常亮）、`lights_brightness`（0–100，默认 70）、`lights_devices`（默认主板、内存、显卡，键盘要的话加 `"keyboard"`）、`lights_argb_leds`（ARGB 接口灯数为 0 时替它设成多少，默认 60）、`lights_on_exit`（`off` 关灯 / `keep` 停在最后一帧）。
+
+还没做的：管理器页面里的开关；鼠标 ROG HARPE II ACE（OpenRGB 1.1 还不认）；龙王风扇每把的真实灯数（查不到公开数据，多设无害，只影响流光长短）。
+
 ## 加一个主题
 
 复制 `themes/starship/`，改 `theme.json` 里的 `id`、`name`、`layout`（`rings` 环形表 / `tubes` 漏刻 / `cards` 玻璃卡）和 `colors`，换掉 `assets/` 里的三张背景和 `theme.css` 里的配色字体即可。管理器会自动列出来。
@@ -33,6 +43,7 @@
 - 驱动拒绝发送会触发固件更新的命令（`upgrade`、`transport` 等）。
 - 不升级固件：官方路径没有降级，升级失败的案例不少。
 - 默认演练模式：没在配置里打开 `device_enabled` 之前，所有上屏操作只打印，不发送。
+- 神光同步只用实时推色和临时硬件模式，从不发「存进设备」（OpenRGB 的 SAVEMODE）；重启或断电后各设备回到它自己存的样子。
 
 ## 授权
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=龙屏神光同步：主板风扇、内存、显卡的灯跟着当前主题走
+Wants=ryuo-openrgb.service
+After=ryuo-openrgb.service
+
+[Service]
+WorkingDirectory=%h/AIOS/ryuo-studio
+ExecStart=/usr/bin/python3 -I %h/AIOS/ryuo-studio/tools/aura_sync.py
+Restart=always
+RestartSec=10
+StandardOutput=append:%h/.local/share/ryuo-studio/lights.log
+StandardError=append:%h/.local/share/ryuo-studio/lights.log
+
+[Install]
+WantedBy=default.target

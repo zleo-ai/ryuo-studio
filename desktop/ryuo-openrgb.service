@@ -1,0 +1,12 @@
+[Unit]
+Description=龙屏神光同步用的 OpenRGB 服务端（只听 127.0.0.1:6742）
+
+[Service]
+ExecStart=/usr/bin/openrgb --server --server-host 127.0.0.1 --noautoconnect
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:%h/.local/share/ryuo-studio/openrgb.log
+StandardError=append:%h/.local/share/ryuo-studio/openrgb.log
+
+[Install]
+WantedBy=default.target
