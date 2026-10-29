@@ -16,6 +16,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import hostsys  # noqa: E402
+import render as render_page  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "app" / "web"
 CONF_DIR = Path.home() / ".config" / "ryuo-studio"
@@ -65,7 +69,8 @@ def run_job(kind, cmd):
     log(f"开始：{kind}")
 
     def work():
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                             errors="replace", cwd=ROOT, **hostsys.no_window())
         for line in p.stdout:
             JOBS[jid]["tail"] = line.strip()[-300:]
         JOBS[jid]["state"] = "done" if p.wait() == 0 else "failed"
@@ -83,15 +88,15 @@ def render(theme, view, data="fresh"):
 
 
 def _render(theme, view, data, out, w, h):
-    subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "snapshot.py")], check=True, capture_output=True)
-    subprocess.run(["bash", str(ROOT / "tools" / "render.sh"), str(out), f"theme={theme}&view={view}&data={data}", str(w), str(h)], check=True)
+    subprocess.run(hostsys.python_cmd(ROOT / "tools" / "snapshot.py"), check=True, capture_output=True, **hostsys.no_window())
+    render_page.render(out, f"theme={theme}&view={view}&data={data}", w, h)
 
 
 def device_status(conf):
     if not conf["device_enabled"]:
         return {"connected": False, "mode": "演练", "note": "还没允许连接屏幕；所有上屏操作只演练、不发送。"}
     try:
-        r = subprocess.run(["adb", "get-state"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run([hostsys.adb(), "get-state"], capture_output=True, text=True, timeout=5, **hostsys.no_window())
         ok = r.stdout.strip() == "device"
     except (OSError, subprocess.TimeoutExpired):
         ok = False
@@ -100,20 +105,15 @@ def device_status(conf):
     return {"connected": False, "mode": "没找到", "note": "电脑没认到屏幕：看看冷头的 USB 线，或者屏是不是还在开机。"}
 
 
-PUSHER = "ryuo-pusher.service"
-
-
 def pusher_status():
-    def ctl(*a):
-        return subprocess.run(["systemctl", "--user", *a, PUSHER], capture_output=True, text=True, timeout=10).stdout.strip()
-    active = ctl("is-active") == "active"
+    active = hostsys.service_active("pusher")
     last = ""
     logf = OUT / "pusher.log"
     if logf.exists():
         lines = [x for x in logf.read_text(errors="replace").splitlines()[-40:]
                  if x[:2].isdigit() and "warning" not in x.lower()]
         last = lines[-1] if lines else ""
-    return {"running": active, "autostart": ctl("is-enabled") == "enabled", "last": last}
+    return {"running": active, "autostart": hostsys.service_autostart("pusher"), "last": last}
 
 
 class H(BaseHTTPRequestHandler):
@@ -163,7 +163,8 @@ class H(BaseHTTPRequestHandler):
             if not conf["device_enabled"]:
                 return self.send(503, {"error": "还没允许连接屏幕"})
             try:
-                png = subprocess.run(["adb", "exec-out", "screencap", "-p"], capture_output=True, timeout=10, check=True).stdout
+                png = subprocess.run([hostsys.adb(), "exec-out", "screencap", "-p"], capture_output=True, timeout=10, check=True,
+                                     **hostsys.no_window()).stdout
             except (OSError, subprocess.SubprocessError):
                 return self.send(503, {"error": "截不到屏，看看屏幕连着没有"})
             return self.send(200, png, "image/png")
@@ -207,22 +208,21 @@ class H(BaseHTTPRequestHandler):
             final.parent.mkdir(parents=True, exist_ok=True)
             seed = int(b.get("seed", int(time.time()) % 100000))
             # 先出原片，再放大成整屏和主区两个 HEVC 版本
-            script = (f'"{sys.executable}" -I "{ROOT}/tools/gen_video.py" "{tdir}/assets/ref-wide.png" "{raw}" '
-                      f'--prompt-file "{prompt}" --seconds {float(b.get("seconds", 10))} --seed {seed} '
-                      f'&& bash "{ROOT}/tools/finish_video.sh" "{raw}" "{final}"')
-            return self.send(200, {"job": run_job(f"生成「{theme}」视频", ["bash", "-c", script])})
+            cmd = hostsys.python_cmd(ROOT / "tools" / "make_video.py", tdir / "assets" / "ref-wide.png", raw, final,
+                                     "--prompt-file", prompt, "--seconds", float(b.get("seconds", 10)), "--seed", seed)
+            return self.send(200, {"job": run_job(f"生成「{theme}」视频", cmd)})
         if p == "/api/pusher":
             act = b.get("action")
             if act not in ("start", "stop", "restart"):
                 return self.send(400, {"error": "只认 start / stop / restart"})
-            subprocess.run(["systemctl", "--user", act, PUSHER], timeout=30)
+            hostsys.service(act, "pusher")
             log({"start": "推送已开", "stop": "推送已停（约 10 秒后屏回到待机画面）", "restart": "推送已重启"}[act])
             return self.send(200, pusher_status())
         if p == "/api/apply":
             # 推送程序每几秒重读一次配置，开着它就等于已经上屏；没开就顺手开起来
             st = pusher_status()
             if conf["device_enabled"] and not st["running"]:
-                subprocess.run(["systemctl", "--user", "start", PUSHER], timeout=30)
+                hostsys.service("start", "pusher")
             log(f"{'上屏' if conf['device_enabled'] else '演练上屏'}：主题 {conf['theme']}，{'分屏' if conf['layout'] == 'split' else '整屏'}")
             return self.send(200, {"sent": conf["device_enabled"], "dry_run": not conf["device_enabled"]})
         return self.send(404, {"error": "not found"})

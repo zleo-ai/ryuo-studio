@@ -29,6 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "driver"))
 sys.path.insert(0, str(ROOT / "tools"))
+import hostsys  # noqa: E402
+import render as render_page  # noqa: E402
 from ryuo.device import RyuoDevice  # noqa: E402
 from ryuo.transport import FakeTransport  # noqa: E402
 
@@ -52,81 +54,27 @@ def conf():
         return dict(DEFAULTS)
 
 
-def host_tz():
-    """电脑当前时区名（如 Asia/Shanghai）；不传的话屏按世界标准时间显示。"""
-    try:
-        return str(Path("/etc/localtime").resolve()).split("zoneinfo/", 1)[1]
-    except (OSError, IndexError):
-        return "UTC"
-
-
-def cpu_temp():
-    for hw in Path("/sys/class/hwmon").glob("hwmon*"):
-        try:
-            if (hw / "name").read_text().strip() in ("k10temp", "coretemp", "zenpower"):
-                return round(int((hw / "temp1_input").read_text()) / 1000)
-        except OSError:
-            continue
-    return None
+host_tz = hostsys.host_tz
+cpu_temp = hostsys.cpu_temp
 
 
 def gpu_temp():
-    try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=5).stdout
-        return int(out.split()[0])
-    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-        return None
-
-
-_cpu_prev = None
-
-
-def cpu_load():
-    """两次读 /proc/stat 之间 CPU 忙的比例；第一次没有上一次，返回 None。"""
-    global _cpu_prev
-    try:
-        v = [int(x) for x in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
-    except (OSError, ValueError):
-        return None
-    idle, total = v[3] + v[4], sum(v)
-    prev, _cpu_prev = _cpu_prev, (idle, total)
-    if not prev or total == prev[1]:
-        return None
-    return round(100 * (1 - (idle - prev[0]) / (total - prev[1])))
-
-
-def mem():
-    try:
-        kv = {line.split(":")[0]: int(line.split()[1]) for line in Path("/proc/meminfo").read_text().splitlines()}
-    except (OSError, ValueError, IndexError):
-        return None
-    total, avail = kv["MemTotal"], kv["MemAvailable"]
-    return {"pct": round(100 * (total - avail) / total), "usedGb": (total - avail) / 1048576, "totalGb": total / 1048576}
-
-
-def gpu():
-    try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=5).stdout
-        temp, load = (int(x) for x in out.splitlines()[0].split(","))
-        return {"temp": temp, "load": load}
-    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-        return None
+    g = hostsys.gpu()
+    return g["temp"] if g else None
 
 
 def sys_stats():
     """屏上左边那排占用：读不到的项不写，屏上显示破折号。"""
     out = {"t": "sys"}
     c = {}
-    if (t := cpu_temp()) is not None:
+    if (t := hostsys.cpu_temp()) is not None:
         c["temp"] = t
-    if (ld := cpu_load()) is not None:
+    if (ld := hostsys.cpu_load()) is not None:
         c["load"] = ld
     out["cpu"] = c
-    if (g := gpu()) is not None:
+    if (g := hostsys.gpu()) is not None:
         out["gpu"] = g
-    if (m := mem()) is not None:
+    if (m := hostsys.mem()) is not None:
         out["mem"] = m
     return out
 
@@ -143,8 +91,8 @@ def telemetry():
 def render(theme, view):
     w, h = (634, 1080) if view == "strip" else (2240, 1080)
     out = OUT / "renders" / f"push-{view}.png"
-    subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "snapshot.py")], check=True, capture_output=True)
-    subprocess.run(["bash", str(ROOT / "tools" / "render.sh"), str(out), f"theme={theme}&view={view}", str(w), str(h)], check=True)
+    subprocess.run(hostsys.python_cmd(ROOT / "tools" / "snapshot.py"), check=True, capture_output=True, **hostsys.no_window())
+    render_page.render(out, f"theme={theme}&view={view}", w, h)
     return out
 
 
@@ -166,11 +114,11 @@ class Screen:
             self.dev = RyuoDevice(self.fake)
 
     def adb(self, *args):
-        cmd = ["adb", *args]
+        cmd = [hostsys.adb(), *args]
         if not self.live:
             say("演练 · 会执行：" + " ".join(cmd))
             return
-        subprocess.run(cmd, check=True, timeout=120)
+        subprocess.run(cmd, check=True, timeout=120, **hostsys.no_window())
 
     def frames_sent(self):
         return 0 if self.live else len(self.fake.frames)

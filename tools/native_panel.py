@@ -18,6 +18,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hostsys  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path.home() / ".local" / "share" / "ryuo-studio"
 BUNDLE = OUT / "native" / "bundle"
@@ -25,7 +28,8 @@ DEVICE_DIR = "/data/local/tmp/ryuo"
 SOCKET = "ryuo-panel"
 LOCAL_PORT = 7791
 DEX = ROOT / "overlay" / "build" / "panel.dex"
-SYSTEM_FONTS = Path("/usr/share/fonts/opentype/noto")
+# 中文衬线体（Noto Serif CJK）太大不进仓库，从系统字体目录拿；Windows 上要先装 Noto Serif CJK，没装就退回屏上自带字体
+SYSTEM_FONTS = [Path("/usr/share/fonts/opentype/noto"), Path.home() / "AppData/Local/Microsoft/Windows/Fonts", Path("C:/Windows/Fonts")]
 # Claude 保留品牌橙，其余图标按主题里的 logo 颜色上色
 LOGOS = {"claude": ("claude-color.svg", False), "codex": ("codex.svg", True), "grok": ("grok.svg", True), "cursor": ("cursor-mono.svg", True)}
 CSS_KEYS = {"ink": "ink", "dim": "dim", "faint": "faint", "line": "line", "accent": "accent", "accent2": "accent2",
@@ -37,7 +41,7 @@ def say(msg):
 
 
 def adb(*args, check=True, capture=False, timeout=120):
-    r = subprocess.run(["adb", *args], check=check, timeout=timeout, capture_output=capture, text=capture)
+    r = subprocess.run([hostsys.adb(), *args], check=check, timeout=timeout, capture_output=capture, text=capture, **hostsys.no_window())
     return r.stdout if capture else None
 
 
@@ -62,6 +66,14 @@ def css_color(v):
     return f"#{round(a * 255):02X}{r:02X}{g:02X}{b:02X}"
 
 
+def font_source(name):
+    """字体文件在电脑上哪儿：先看仓库自带的，再看系统字体目录；都没有返回 None。"""
+    for d in [ROOT / "themes" / "_shared" / "fonts" / "ttf", *SYSTEM_FONTS]:
+        if (d / name).exists():
+            return d / name
+    return None
+
+
 def theme_spec(theme):
     tdir = ROOT / "themes" / theme
     meta = json.loads((tdir / "theme.json").read_text())
@@ -71,7 +83,8 @@ def theme_spec(theme):
         "id": theme,
         "layout": meta["layout"],
         "colors": {k: css_color(vars_[v]) for k, v in CSS_KEYS.items()},
-        "fonts": meta["native_fonts"],
+        # 找不到的字体那一项留空，屏上就用自带的无衬线体（带中文），不至于整个主题起不来
+        "fonts": {k: (v if v and font_source(Path(v["file"]).name) else None) for k, v in meta["native_fonts"].items()},
         "strip": f"themes/{theme}/strip.jpg",
         "logos": {k: {"file": f"logos/{k}.png", "mono": mono} for k, (_f, mono) in LOGOS.items()},
         "scrim": meta.get("scrim", 0.74),
@@ -90,9 +103,9 @@ def render_logo(svg, out):
     page = out.with_suffix(".html")
     page.write_text(f'<!doctype html><body style="margin:0;background:transparent;color:#fff">{body}</body>')
     prof = OUT / "native" / "chrome"
-    subprocess.run(["google-chrome", "--headless=new", f"--user-data-dir={prof}", "--force-device-scale-factor=1",
+    subprocess.run([hostsys.chrome(), "--headless=new", f"--user-data-dir={prof}", "--force-device-scale-factor=1",
                     "--hide-scrollbars", "--default-background-color=00000000", "--window-size=256,256",
-                    f"--screenshot={out}", f"file://{page}"], check=True, capture_output=True, timeout=60)
+                    f"--screenshot={out}", page.as_uri()], check=True, capture_output=True, timeout=60, **hostsys.no_window())
     page.unlink()
 
 
@@ -103,19 +116,15 @@ def build_bundle(theme):
     (BUNDLE / "logos").mkdir(exist_ok=True)
     (BUNDLE / "themes" / theme).mkdir(parents=True, exist_ok=True)
     if not DEX.exists():
-        subprocess.run(["bash", str(ROOT / "overlay" / "build.sh")], check=True)
+        subprocess.run(hostsys.python_cmd(ROOT / "overlay" / "build.py"), check=True)
     shutil.copy2(DEX, BUNDLE / "panel.dex")
     for role in spec["fonts"].values():
         if not role:
             continue
         name = Path(role["file"]).name
         dst = BUNDLE / "fonts" / name
-        if dst.exists():
-            continue
-        src = ROOT / "themes" / "_shared" / "fonts" / "ttf" / name
-        if not src.exists():
-            src = SYSTEM_FONTS / name  # 中文衬线体屏上没有，从电脑上拿（SIL OFL）
-        shutil.copy2(src, dst)
+        if not dst.exists():
+            shutil.copy2(font_source(name), dst)
     shutil.copy2(ROOT / "themes" / theme / "assets" / "strip.jpg", BUNDLE / "themes" / theme / "strip.jpg")
     for key, (fname, _mono) in LOGOS.items():
         svg = ROOT / "themes" / "_shared" / "logos" / fname
@@ -229,19 +238,15 @@ class NativePanel:
         self.buf = b""
 
 
-def host_tz():
-    try:
-        return str(Path("/etc/localtime").resolve()).split("zoneinfo/", 1)[1]
-    except (OSError, IndexError):
-        return "UTC"
+host_tz = hostsys.host_tz
 
 
 def fresh_data(stale_minutes=None):
     out = OUT / "native" / "data.json"
-    cmd = [sys.executable, "-I", str(ROOT / "tools" / "snapshot.py"), "--json", str(out)]
+    cmd = hostsys.python_cmd(ROOT / "tools" / "snapshot.py", "--json", out)
     if stale_minutes is not None:
         cmd += ["--stale-minutes", str(stale_minutes)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    subprocess.run(cmd, check=True, capture_output=True, **hostsys.no_window())
     data = json.loads(out.read_text())
     data["tz"] = host_tz()
     if stale_minutes is not None:  # 演示过期样子：把生成时间往前挪
