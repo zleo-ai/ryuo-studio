@@ -15,9 +15,12 @@ config 里的键（都可省）：
   lights_enabled      true / false，false 时按 lights_on_exit 处理后空等
   lights_effect       flow 流光 / breathe 呼吸 / static 常亮；主题里写了 lights.effect 时以主题为准
   lights_brightness   0–100
-  lights_devices      参与同步的设备类型，默认主板、内存、显卡；键盘要的话加 "keyboard"
-  lights_argb_leds    ARGB 接口灯数为 0 时替它设成多少（多设无害，只影响流光长短）
+  lights_devices      参与同步的设备类型，默认主板、内存、显卡
+  lights_argb_leds    主板每路 ARGB 接口设成多少颗灯（多设无害，只影响流光长短）
   lights_on_exit      off 关灯 / keep 停在最后一帧
+
+模式带「自动存盘」标记的设备（比如 Keychron 键盘，一切模式就写进键盘存储）一律跳过，
+写进 lights_devices 也不碰。同步关着时只识别设备，不切任何模式。
 """
 import argparse
 import colorsys
@@ -43,20 +46,54 @@ FPS = 30
 SLOW_FPS = 15  # 内存、显卡走 SMBus，推得太勤没意义
 FADE_S = 1.5
 FLOW_S, BREATHE_S, SWAY_S = 8.0, 7.0, 6.0
+KEEPALIVE_S = 2.0  # 颜色没变也隔这么久重推一次，设备丢了一帧也能补上
+AUTO_SAVE = 1 << 9  # OpenRGB 的 MODE_FLAG_AUTOMATIC_SAVE
+FALLBACK = "#2DE2C8"
 
 
 def say(msg):
     print(time.strftime("%H:%M:%S"), msg, flush=True)
 
 
-def conf():
+CHECKS = {
+    "theme": (str, lambda v: re.fullmatch(r"[A-Za-z0-9_-]+", v)),
+    "lights_enabled": (None, lambda v: isinstance(v, bool)),
+    "lights_effect": (str, lambda v: v in EFFECTS),
+    "lights_brightness": (int, lambda v: type(v) is int and 0 <= v <= 100),
+    "lights_devices": (None, lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v)),
+    "lights_argb_leds": (int, lambda v: type(v) is int and 1 <= v <= 500),
+    "lights_on_exit": (str, lambda v: v in ("off", "keep")),
+}
+
+
+def clean(raw, prev):
+    """缺的键用默认值；写坏的键（类型不对、超范围）沿用上一次的值。"""
+    if not isinstance(raw, dict):
+        return dict(prev)
+    out = {**raw, **DEFAULTS}
+    for key, (conv, ok) in CHECKS.items():
+        if key not in raw:
+            continue
+        try:
+            v = conv(raw[key]) if conv and not isinstance(raw[key], bool) else raw[key]
+            out[key] = v if ok(v) else prev[key]
+        except (TypeError, ValueError):
+            out[key] = prev[key]
+    return out
+
+
+def load_conf(path, prev):
+    """读不到或读到半截（管理器正在写）就整份沿用上一次的。"""
     try:
-        return {**DEFAULTS, **json.loads(CONF.read_text())}
+        raw = json.loads(path.read_text())
     except (OSError, ValueError):
-        return dict(DEFAULTS)
+        return dict(prev)
+    return clean(raw, prev)
 
 
 def hex_rgb(h):
+    if not isinstance(h, str) or not re.fullmatch(r"#?[0-9A-Fa-f]{6}", h):
+        raise ValueError(f"不是 #RRGGBB 颜色：{h!r}")
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
@@ -78,21 +115,22 @@ def css_vars(theme):
 
 def palette(theme, c):
     """返回 (效果, [主色, 副色])，和屏上面板同一对颜色：主色取标题色，副色取 theme.css 的 --accent2。
-    主题可在 theme.json 里写 lights.colors / lights.effect 单独给灯定。"""
+    主题可在 theme.json 里写 lights.colors / lights.effect 单独给灯定。主题文件写坏了就用默认青色。"""
     try:
         t = json.loads((ROOT / "themes" / theme / "theme.json").read_text())
-    except (OSError, ValueError):
-        t = {}
-    lights = t.get("lights") or {}
-    cols = [hex_rgb(x) for x in lights.get("colors", [])][:2]
-    if not cols:
-        css = css_vars(theme)
-        title = t.get("colors", {}).get("title") or css.get("accent") or "#2DE2C8"
-        cols = [hex_rgb(title)] + ([hex_rgb(css["accent2"])] if "accent2" in css else [])
+        lights = t.get("lights") or {}
+        cols = [hex_rgb(x) for x in lights.get("colors") or []][:2]
+        if not cols:
+            css = css_vars(theme)
+            title = (t.get("colors") or {}).get("title") or css.get("accent") or FALLBACK
+            cols = [hex_rgb(title)] + ([hex_rgb(css["accent2"])] if "accent2" in css else [])
+        effect = lights.get("effect")
+    except (OSError, ValueError, TypeError, AttributeError):
+        cols, effect = [hex_rgb(FALLBACK)], None
     if len(cols) == 1:
         cols.append(companion(cols[0]))
-    effect = lights.get("effect") or c["lights_effect"]
-    return (effect if effect in EFFECTS else "flow"), cols
+    effect = effect if effect in EFFECTS else c["lights_effect"]
+    return effect, cols
 
 
 def mix(a, b, w):
@@ -147,7 +185,7 @@ class Fader:
 
 def look_of(c):
     effect, cols = palette(c["theme"], c)
-    return (c["theme"], effect, tuple(cols), int(c["lights_brightness"]))
+    return (c["theme"], effect, tuple(cols), c["lights_brightness"])
 
 
 def render(dev, fader, now):
@@ -161,73 +199,101 @@ def render(dev, fader, now):
     return [tuple(round(x) for x in mix(o, n, w)) for o, n in zip(old, new)]
 
 
+def setup_key(c):
+    return (tuple(c["lights_devices"]), c["lights_argb_leds"])
+
+
 class Lights:
     def __init__(self, host="127.0.0.1", port=6742):
         self.host, self.port = host, port
-        self.cli, self.devs, self.last, self.sent_at = None, [], {}, {}
+        self.cli, self.devs, self.key, self.active = None, [], None, False
+        self.last, self.sent_at = {}, {}
 
     def connect(self, c):
         self.cli = sdk.Client(self.host, self.port)
         self.setup(c)
 
     def setup(self, c):
-        want = set(c["lights_devices"])
-        devs = []
+        """只识别要同步的设备，不切模式（同步关着时也会走到这里）。"""
+        want, devs = set(c["lights_devices"]), []
         for d in self.cli.controllers():
             if d.kind not in want:
                 continue
-            for zi, z in enumerate(d.zones):
-                if z.leds_count == 0 and z.leds_max > z.leds_min:
-                    self.cli.resize_zone(d.index, zi, max(z.leds_min, min(z.leds_max, int(c["lights_argb_leds"]))))
-            d = self.cli.controller(d.index)
-            self.cli.set_custom_mode(d.index)
+            direct = d.mode_index("direct", "custom")
+            used = [i for i in (direct, d.mode_index("off")) if i is not None]
+            if direct is None or any(d.modes[i].flags & AUTO_SAVE for i in used):
+                say(f"跳过 {d.name}：" + ("没有实时推色模式" if direct is None else "切模式会写进设备存储"))
+                continue
             devs.append(d)
-        self.devs, self.last, self.sent_at = devs, {}, {}
+        self.devs, self.key, self.active = devs, setup_key(c), False
         say("灯效设备：" + "、".join(f"{d.name}（{len(d.leds)} 颗）" for d in devs) if devs else "没找到要同步的灯效设备")
+
+    def activate(self, c):
+        """切到实时推色；主板 ARGB 接口的灯数不对就先设好。"""
+        for k, d in enumerate(self.devs):
+            sized = False
+            for zi, z in enumerate(d.zones):
+                want = max(z.leds_min, min(z.leds_max, c["lights_argb_leds"]))
+                if z.leds_max > z.leds_min and z.leds_count != want:
+                    self.cli.resize_zone(d.index, zi, want)
+                    sized = True
+            if sized:
+                self.devs[k] = d = self.cli.controller(d.index)
+            self.cli.set_custom_mode(d.index)
+        self.active, self.last, self.sent_at = True, {}, {}
 
     def push(self, fader, now):
         for d in self.devs:
             fps = SLOW_FPS if d.location.startswith("I2C") else FPS
-            if now - self.sent_at.get(d.index, 0) < 1 / fps:
+            since = now - self.sent_at.get(d.index, -KEEPALIVE_S)
+            if since < 1 / fps:
                 continue
             cols = render(d, fader, now)
-            if cols == self.last.get(d.index):
+            if cols == self.last.get(d.index) and since < KEEPALIVE_S:
                 continue
             self.cli.update_leds(d.index, cols)
             self.last[d.index], self.sent_at[d.index] = cols, now
 
     def release(self, how):
-        """退出或关掉同步时：off 切到硬件的 Off 模式（没有就推全黑），keep 什么都不做。"""
-        if self.cli is None or how == "keep":
+        """退出或关掉同步时：off 先推全黑再切硬件的 Off 模式，keep 停在最后一帧。
+        先推黑是因为 OpenRGB 可能在切完 Off 之后才把排着队的上一帧写下去。"""
+        if self.cli is None or not self.active:
+            return
+        self.active = False
+        if how == "keep":
             return
         for d in self.devs:
+            self.cli.update_leds(d.index, [(0, 0, 0)] * len(d.leds))
             off = d.mode_index("off")
             if off is not None:
                 self.cli.update_mode(d.index, off, d.modes[off])
-            else:
-                self.cli.update_leds(d.index, [(0, 0, 0)] * len(d.leds))
+        for d in self.devs:  # 等服务端把排队的命令处理完再走，断得太快它可能来不及
+            self.cli.controller(d.index)
         self.last = {}
 
     def close(self):
         if self.cli is not None:
             self.cli.close()
-        self.cli, self.devs = None, []
+        self.cli, self.devs, self.active = None, [], False
 
 
-def write_status(**kw):
+def write_status(path, **kw):
     try:
-        STATUS.parent.mkdir(parents=True, exist_ok=True)
-        STATUS.write_text(json.dumps({"at": int(time.time()), **kw}, ensure_ascii=False))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"at": int(time.time()), **kw}, ensure_ascii=False))
     except OSError:
         pass
 
 
-def preview():
-    c = conf()
+def preview(path):
+    c = load_conf(path, DEFAULTS)
     look = look_of(c)
     print(f"主题 {look[0]} · 效果 {look[1]} · 亮度 {look[3]} · 主色 {look[2][0]} · 副色 {look[2][1]}")
     for t in (0, 2, 4, 6):
         print(f"  {t} 秒：", " ".join("#%02X%02X%02X" % x for x in frame(look[1], list(look[2]), t, 8, look[3])))
+
+
+NET_ERRORS = (OSError, struct.error, ValueError, IndexError)  # 后三种是收到残缺报文
 
 
 def main():
@@ -235,60 +301,69 @@ def main():
     ap.add_argument("--preview", action="store_true")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=6742)
+    ap.add_argument("--config", type=Path, default=CONF)
+    ap.add_argument("--status", type=Path, default=STATUS)
     a = ap.parse_args()
     if a.preview:
-        return preview()
+        return preview(a.config)
 
     stop = []
     signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
     signal.signal(signal.SIGINT, lambda *_: stop.append(1))
     lights, fader = Lights(a.host, a.port), Fader()
-    c, conf_at, status_at, backoff, released = conf(), 0.0, 0.0, 2, False
-    while not stop:
-        now = time.monotonic()
-        if now - conf_at >= 1:
-            c, conf_at = conf(), now
-            fader.set(look_of(c), now)
-        try:
-            if lights.cli is None:
-                lights.connect(c)
-                backoff, released = 2, False
-                say("已连上 OpenRGB")
-            lights.cli.drain()
-            if lights.cli.list_changed:
-                say("设备有增减，重新识别")
-                lights.setup(c)
-            if c["lights_enabled"]:
-                if released:
-                    lights.setup(c)
-                    released = False
-                lights.push(fader, now)
-            elif not released:
-                lights.release(c["lights_on_exit"])
-                released = True
-                say("同步已关")
-            if now - status_at >= 5:
-                status_at = now
-                write_status(running=True, enabled=bool(c["lights_enabled"]), theme=fader.cur[0], effect=fader.cur[1],
-                             devices=[{"name": d.name, "kind": d.kind, "leds": len(d.leds)} for d in lights.devs])
-        except (OSError, struct.error, ValueError, IndexError) as e:  # 后三种是收到残缺报文
-            say(f"OpenRGB 连不上或断了：{e}；{backoff} 秒后重试")
-            write_status(running=False, error=str(e))
-            lights.close()
-            for _ in range(backoff * 10):
-                if stop:
-                    break
-                time.sleep(0.1)
-            backoff = min(30, backoff * 2)
-            continue
-        time.sleep(1 / FPS)
+    c, conf_at, status_at, backoff = dict(DEFAULTS), float("-inf"), float("-inf"), 2
+    skew = time.time() - time.monotonic()
     try:
-        lights.release(c["lights_on_exit"])
-    except OSError:
-        pass
-    lights.close()
-    write_status(running=False, enabled=bool(c["lights_enabled"]))
-    say("已退出")
+        while not stop:
+            now = time.monotonic()
+            if now - conf_at >= 1:
+                c, conf_at = load_conf(a.config, c), now
+                fader.set(look_of(c), now)
+            # 睡眠时单调时钟不走、墙上时钟走，两者差值一跳就是刚醒过来：设备可能掉回了自己存的模式
+            resumed = abs(time.time() - now - skew) > 5
+            skew = time.time() - now
+            try:
+                if lights.cli is None:
+                    lights.connect(c)
+                    backoff = 2
+                    say("已连上 OpenRGB")
+                lights.cli.drain()
+                if lights.cli.list_changed or lights.key != setup_key(c):
+                    if lights.key != setup_key(c):
+                        lights.release(c["lights_on_exit"])  # 被移出名单的设备也要放掉
+                    say("设备有增减或设置变了，重新识别")
+                    lights.setup(c)
+                if c["lights_enabled"]:
+                    if not lights.active or resumed:
+                        lights.activate(c)
+                    lights.push(fader, now)
+                elif lights.active:
+                    lights.release(c["lights_on_exit"])
+                    say("同步已关")
+                if now - status_at >= 5:
+                    status_at = now
+                    write_status(a.status, running=True, enabled=c["lights_enabled"], theme=fader.cur[0],
+                                 effect=fader.cur[1],
+                                 devices=[{"name": d.name, "kind": d.kind, "leds": len(d.leds)} for d in lights.devs])
+            except NET_ERRORS as e:
+                say(f"OpenRGB 连不上或断了：{e}；{backoff} 秒后重试")
+                write_status(a.status, running=False, error=str(e))
+                lights.close()
+                for _ in range(backoff * 10):
+                    if stop:
+                        break
+                    time.sleep(0.1)
+                backoff = min(30, backoff * 2)
+                continue
+            time.sleep(1 / FPS)
+    finally:  # 不管怎么退出，都按设置把灯放掉
+        try:
+            lights.release(c["lights_on_exit"])
+        except NET_ERRORS:
+            pass
+        lights.close()
+        write_status(a.status, running=False, enabled=c["lights_enabled"])
+        say("已退出")
 
 
 if __name__ == "__main__":

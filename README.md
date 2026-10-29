@@ -30,9 +30,11 @@
 
 需要 OpenRGB 1.0 以上（本机 2026-10-29 装的是官方 1.1 的 Debian trixie 包和配套的 `libhidapi-hotplug`）。`desktop/install.sh` 会装两个用户服务：`ryuo-openrgb`（只听 127.0.0.1 的服务端）和 `ryuo-lights`（同步本身）。`python3 -I tools/aura_sync.py --preview` 不连设备，只打印当前主题算出来的颜色。
 
-设置写在 `~/.config/ryuo-studio/config.json`，都可省：`lights_enabled`、`lights_effect`（`flow` 流光 / `breathe` 呼吸 / `static` 常亮）、`lights_brightness`（0–100，默认 70）、`lights_devices`（默认主板、内存、显卡，键盘要的话加 `"keyboard"`）、`lights_argb_leds`（ARGB 接口灯数为 0 时替它设成多少，默认 60）、`lights_on_exit`（`off` 关灯 / `keep` 停在最后一帧）。
+设置写在 `~/.config/ryuo-studio/config.json`，都可省：`lights_enabled`、`lights_effect`（`flow` 流光 / `breathe` 呼吸 / `static` 常亮）、`lights_brightness`（0–100，默认 70）、`lights_devices`（默认主板、内存、显卡）、`lights_argb_leds`（主板每路 ARGB 接口设成多少颗灯，默认 60）、`lights_on_exit`（`off` 关灯 / `keep` 停在最后一帧）。写坏的值会被忽略，沿用上一次的。同步关着时只识别设备，不切任何模式；电脑睡眠醒来会重新接管一次。
 
-还没做的：管理器页面里的开关；鼠标 ROG HARPE II ACE（OpenRGB 1.1 还不认）；龙王风扇每把的真实灯数（查不到公开数据，多设无害，只影响流光长短）。
+模式带「自动存盘」标记的设备一律跳过，写进 `lights_devices` 也不碰：本机的 Keychron 键盘就是这样，OpenRGB 一给它切模式就会写进键盘存储。
+
+还没做的：管理器页面里的开关；键盘（见上）；鼠标 ROG HARPE II ACE（OpenRGB 1.1 还不认）；龙王风扇每把的真实灯数（查不到公开数据，多设无害，只影响流光长短）。
 
 ## 加一个主题
 
